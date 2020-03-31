@@ -4,10 +4,8 @@ import logging.config
 
 import docopt
 
-from confctl.conf import Base, Param
+from confctl.conf import Base, Param, text
 
-
-logger = logging.getLogger(__name__)
 
 command_doc = """
 Usage:
@@ -49,7 +47,7 @@ logging.config.dictConfig(
         },
         "loggers": {
             "": {"level": "WARNING", "handlers": ["console"]},
-            "confctl": {"handlers": ["console"], "level": "DEBUG", "propagate": False},
+            "configs": {"handlers": ["console"], "level": "DEBUG", "propagate": False},
         },
     }
 )
@@ -87,18 +85,23 @@ class _Conf(Base):
     CONFCTL_CONFIG_DIR = Param.PATH("~/.config/confctl")
     CONFCTL_CONFIG_FILE = Param.PATH("~/.config/confctl/config")
     CONFCTL_USER_CONFIGS = Param.PATH("~/.config/confctl/configs")
-    CONFCTL_CACHE_DIR = Path.home() / ".cache/confctl"
+    CONFCTL_CACHE_DIR = Param.PATH("~/.cache/confctl")
 
     flags = Param({"no:full"})
     configurations = Param([])
 
+    def __init__(self):
+        super().__init__("confctl", "/tmp", "/tmp")
+
     def __str__(self):
         return "confctl"
 
-    def _load_configuration(self, path):
+    def _load_configuration(self, name, path):
         import importlib.util
 
-        spec = importlib.util.spec_from_file_location(f"configs.{name}", path)
+        spec = importlib.util.spec_from_file_location(
+            f"configs.{name}", path / "__init__.py"
+        )
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
@@ -106,42 +109,47 @@ class _Conf(Base):
     def _get_configurations(self):
         return self.configurations or [
             d.name
-            for d in slef.CONFCTL_USER_CONFIGS.iterdir()
+            for d in self.CONFCTL_USER_CONFIGS.iterdir()
             if d.is_dir() and (d / "__init__.py").exists()
         ]
 
     def configure(self):
-        logger.info('Configuring "%s" target with %s flags...', self.TARGET, self.flags)
+        self.info(
+            'Configuring "%s" target with %s flags...', text.t(self.TARGET), self.flags,
+        )
 
-        ensure_folders(self.CONFCTL_CONFIG_DIR, self.CONFCTL_CACHE_DIR, silent=True)
+        self.ensure_folders(
+            self.CONFCTL_CONFIG_DIR, self.CONFCTL_CACHE_DIR, silent=True
+        )
 
         for conf_name in self._get_configurations():
             skip_flag = f"no:{conf_name}"
             if skip_flag in self.flags:
-                logger.debug(
+                self.debug(
                     "[configs/%s] Skipped because of %s flag", conf_name, skip_flag
                 )
                 continue
 
-            logger.info("[configs/%s] Configuring...", conf_name)
+            self.info("[configs/%s] Configuring...", conf_name)
 
-            conf_dir = self.CONFCTL_CONFIGS / conf_name
+            conf_dir = self.CONFCTL_USER_CONFIGS / conf_name
             conf_cache_dir = (
                 self.CONFCTL_CACHE_DIR / f"{self.TARGET}-{self.MACHINE_ID}/{conf_name}"
             )
 
-            conf_module = self._load_configuration(conf_dir)
+            conf_module = self._load_configuration(conf_name, conf_dir)
             conf = conf_module.Configuration(
                 configuration_name=conf_name,
                 configuration_dir=conf_dir,
                 cache_dir=conf_cache_dir,
+                msg_indent="    ",
             )
 
             conf.load_file(self.CONFCTL_CONFIG_FILE)
             conf.load_env()
             conf.load(str(self), self)
             conf.configure()
-            logger.info("[configs/%s] Configured.", conf_name)
+            self.info("[configs/%s] Configured.", conf_name)
 
 
 def main():

@@ -2,9 +2,67 @@ import logging
 from pathlib import Path
 import os
 
-from confctl import utils
 
-logger = logging.getLogger(__name__)
+class text:
+    RGB = lambda r, g, b: f"\033[38;2;{r};{g};{b}m"
+    TITLE = "\033[95m"
+    DEBUG = RGB(169, 169, 169)
+    INFO = RGB(0, 64, 133)  # alt "\033[94m"
+    OPERATION = RGB(12, 84, 96)
+    WARNING = "\033[93m"
+    ERROR = "\033[91m"
+    REVERSE = "\033[7m"
+    FADE = "\033[1m"
+    BOLD = "\033[2m"
+    ITALIC = "\033[3m"
+    UNDERLINE = "\033[4m"
+    ENDC = "\033[0m"
+
+    def __init__(self, code, text, prev_code="", ensure_code_after=("%s", "}")):
+        self.code = code
+        self.prev_code = prev_code
+        self.text = text
+        self.ensure_code_after = ensure_code_after
+
+    @classmethod
+    def b(cls, text):
+        return cls(cls.BOLD, text)
+
+    @classmethod
+    def i(cls, text):
+        return cls(cls.ITALIC, text)
+
+    @classmethod
+    def u(cls, text):
+        return cls(cls.UNDERLINE, text)
+
+    @classmethod
+    def t(cls, text):
+        return cls(cls.TITLE, text)
+
+    @classmethod
+    def err(cls, text):
+        return cls(cls.ERROR, text)
+
+    @classmethod
+    def info(cls, text):
+        return cls(cls.INFO, text)
+
+    @classmethod
+    def debug(cls, text):
+        return cls(cls.DEBUG, cls(cls.FADE, text, prev_code=cls.DEBUG))
+
+    @classmethod
+    def warning(cls, text):
+        return cls(cls.WARNING, text)
+
+    def __str__(self):
+        text = str(self.text)
+        if self.ensure_code_after:
+            for entry in self.ensure_code_after:
+                text = text.replace(entry, f"{entry}{self.code}")
+
+        return f"{self.code}{text}{self.ENDC}{self.prev_code}"
 
 
 def load_list(v):
@@ -72,15 +130,20 @@ class Param:
                 raise ValueError(f'"{self._name}" is required and was not set')
         return value
 
-    def __set_name__(self, obj_type, name):
+    def __set_name__(self, conf, name):
         self._name = name
-        obj_type.register_option(name, self)
+        conf.register_option(name, self)
 
     def __get__(self, obj, obj_type, dump=False):
         value = obj.__dict__.get(self._name, self.take_default)
         if self._name not in obj.__dict__:
             value = self._handle_value(value)
-            logger.debug("[%s:load:default-value] %s = %s", str(obj), self._name, value)
+            obj.debug(
+                "[%s:use:default-value] %s = %s",
+                str(obj),
+                text.i(self._name),
+                text.i(value),
+            )
         obj.__dict__[self._name] = value
         if dump:
             return self.dump(value)
@@ -97,6 +160,33 @@ class Param:
 
 
 class _ConfigContainer:
+    def __init__(self, name, msg_indent=""):
+        self.logger = logging.getLogger(f"configs.{name}")
+        self.msg_indent = msg_indent
+
+    def _handle_msg_indent(self, msg):
+        return f"{self.msg_indent}{msg}"
+
+    def log(self, msg, *args, **kwargs):
+        msg = self._handle_msg_indent(msg)
+        self.logger.info(text(text.OPERATION, msg), *args, **kwargs)
+
+    def debug(self, msg, *args, **kwargs):
+        msg = self._handle_msg_indent(msg)
+        self.logger.debug(text.debug(msg), *args, **kwargs)
+
+    def info(self, msg, *args, **kwargs):
+        msg = self._handle_msg_indent(msg)
+        self.logger.info(text.info(msg), *args, **kwargs)
+
+    def warning(self, msg, *args, **kwargs):
+        msg = self._handle_msg_indent(msg)
+        self.logger.error(text.warning(msg), *args, **kwargs)
+
+    def error(self, *args):
+        msg = self._handle_msg_indent(msg)
+        self.logger.error(*args)
+
     @classmethod
     def register_option(cls, name, option):
         if not hasattr(cls, "_defined_options"):
@@ -134,7 +224,7 @@ class _ConfigContainer:
     def load(self, source_name, options):
         for k in sorted(set(self).intersection(options), key=lambda k: k.lower()):
             v = options[k]
-            logger.debug("[%s:load:%s] %s = %s", str(self), source_name, k, v)
+            self.debug("[%s:load:%s] %s = %s", str(self), source_name, k, v)
             setattr(self, k, v)
 
     def load_file(self, config_file):
@@ -159,25 +249,19 @@ class _ConfigContainer:
 
 
 class Base(_ConfigContainer):
-    def __init__(self, configuration_name, configuration_dir, cache_dir):
+    def __init__(self, configuration_name, configuration_dir, cache_dir, **kwargs):
         self.name = configuration_name
-        self.logger = logging.getLogger(f"configs.{self.name}")
+        super().__init__(self.name, **kwargs)
 
-        self.CONFIGURATION_DIR = Path(directory)
-        self.CACHE_DIR = cache_dir
+        self.CONFIGURATION_DIR = Path(configuration_dir)
+        self.CACHE_DIR = Path(cache_dir)
         self.ensure_folders(self.CACHE_DIR, silent=True)
 
     def __str__(self):
         return f"configs/{self.name}"
 
-    def debug(self, *args):
-        self.logger.debug(*args)
-
-    def info(self, *args):
-        self.logger.info(*args)
-
-    def error(self, *args):
-        self.logger.error(*args)
+    def _op_prefix(self, op, sign="✔"):
+        return f"[ {sign} {op:<10} ]"
 
     def _handle_src_dst(self, src, dst):
         src = Path(src).expanduser()
@@ -190,27 +274,66 @@ class Base(_ConfigContainer):
             dst = self.CACHE_DIR / dst
         return src, dst
 
-    def ensure_folders(self, *args, **kwargs):
-        utils.ensure_folders(*args, **kwargs)
+    def ensure_folders(self, *folders, silent=False):
+        for f in folders:
+            folder = Path(f).expanduser()
+            if not silent:
+                self.log("%s Ensure exists %s", self._op_prefix("folder"), folder)
+            folder.mkdir(parents=True, exist_ok=True)
+
+    def _template(self, src, dst, **context):
+        from jinja2 import Template
+
+        src = Path(src).expanduser()
+        dst = Path(dst).expanduser()
+
+        with open(src) as _in:
+            template = Template(_in.read())
+            self.log(
+                "%s Rendering %s --> %s", self._op_prefix("template"), src.name, dst
+            )
+            template.stream(**context).dump(str(dst))
+
+        return dst
 
     def template(self, src, dst=None, symlink=None):
         if dst is None and Path(src).suffix == ".j2":
             dst = Path(str(src)[:-3])
         src, dst = self._handle_src_dst(src, dst)
         self.ensure_folders(dst.parent)
-        dst = utils.template(src, dst, **self)
+        dst = self._template(src, dst, **self)
         if symlink:
             self.symlink(symlink, dst)
         return dst
 
-    def install_packages(self, *args):
-        utils.install_packages(*args)
+    def install_packages(self, packages):
+        if isinstance(packages, str):
+            packages = packages.splitlines()
+            packages = [p.strip() for p in packages if not p.strip().startswith("#")]
 
-    def run_sh(self, *args):
-        return utils.run_sh(*args)
+        packages = " ".join(packages)
+        self.run_sh(f"sudo apt install -y {packages}")
 
-    def run_parallel(self, *args):
-        utils.run_parallel(*args)
+    def run_sh(self, *commands):
+        import subprocess
+        import shlex
+
+        outputs = []
+        any_failed = False
+        for cmd in commands:
+            if not any_failed:
+                self.log("%s %s", self._op_prefix("sh"), cmd)
+                try:
+                    output = subprocess.check_output(cmd, shell=True)
+                    outputs.append(output)
+                except subprocess.SubprocessError:
+                    self.error("%s %s", self._op_prefix("sh:failed", "❌"), cmd)
+                    outputs.append(None)
+                    any_failed = True
+            else:
+                self.warning("%s %s", self._op_prefix("sh:skipped", "⚠"), cmd)
+
+        return outputs
 
     def symlink(self, link, target):
         link, target = Path(link).expanduser(), Path(target).expanduser()

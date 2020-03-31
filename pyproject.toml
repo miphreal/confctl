@@ -9,8 +9,13 @@ readme = "README.md"
 
 repository = "https://github.com/miphreal/confctl"
 
+[tool.poetry.scripts]
+poetry = "confctl.cli:main"
+
 [tool.poetry.dependencies]
 python = "^3.8"
+docopt = "^0.6.2"
+jinja2 = "^2.11.1"
 
 [tool.poetry.dev-dependencies]
 black = "^19.10b0"
