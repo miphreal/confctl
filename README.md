@@ -58,7 +58,7 @@ they might have differnt parameters).
 3. Create a couple configs
 
 Go to `~/.config/confctl/user-configs` and create there a folder with `__init__.py` inside.
-`__init__.py` must define `Configuration` class (inherited from `Base` which provides basic utils to run sh commands, render templates, etc).
+`__init__.py` must define `Configuration` class (inherited from `Base`, which btw also provides some handy utils to run sh commands, render templates, etc).
 
 ```py
 # ~/.config/confctl/user-configs/console/__init__.py
@@ -68,9 +68,8 @@ from confctl import Base, Param
 class Configuration(Base):
     HOME = Param.PATH("~")
     TARGET = Param()
-    YJ_PROJECT_ROOT = Param.PATH("~/Develop/yunojuno/platform")
     tmux_plugin_manager_dir = Param.PATH("~/.tmux/plugins/tpm")
-    tmp_repo = "https://github.com/tmux-plugins/tpm"
+    tpm_repo = "https://github.com/tmux-plugins/tpm"
     fonts_repo = "https://github.com/ryanoasis/nerd-fonts"
     prezto_repo = "https://github.com/sorin-ionescu/prezto"
 
@@ -84,7 +83,7 @@ class Configuration(Base):
         # tmux
         self.ensure_folders(self.tmux_plugin_manager_dir)
         if not (self.tmux_plugin_manager_dir / ".git").exists():
-            self.run_sh(f"git clone {self.tmp_repo} {self.tmux_plugin_manager_dir}")
+            self.run_sh(f"git clone {self.tpm_repo} {self.tmux_plugin_manager_dir}")
         self.template("tmux.conf.j2", symlink=self.HOME / ".tmux.conf")
 
         # prezto
