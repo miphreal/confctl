@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "confctl"
-version = "0.3.0"
+version = "0.3.1"
 description = "Simple configuration management"
 authors = ["miphreal <miphreal@gmail.com>"]
 license = "MIT"
