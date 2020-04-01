@@ -1,3 +1,5 @@
+import os
+
 from confctl.conf import Base, Param
 from confctl.constants import (
     DEFAULT_CONFCTL_CONFIG_FILE,
@@ -25,6 +27,16 @@ class Configuration(Base):
     ]
 
     def configure(self):
+        try:
+            CONFCTL_VENV = self.CONFCTL_VENV
+        except ValueError:
+            CONFCTL_VENV = os.getenv("VIRTUAL_ENV")
+
+        if not CONFCTL_VENV:
+            self.error("`CONFCTL_VENV` or `VIRTUAL_ENV` env variable is not specified.")
+
+        self.CONFCTL_VENV = CONFCTL_VENV
+
         self.ensure_folders(
             self.CONFCTL_CONFIG_FILE.parent, self.CONFCTL_BIN.parent,
         )

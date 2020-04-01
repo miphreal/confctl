@@ -162,7 +162,13 @@ class _Conf(Base):
             conf.load_file(self.CONFCTL_CONFIG_FILE)
             conf.load_env()
             conf.load(
-                "cli-args", {"flags": self.flags, "configurations": self.configurations}
+                "cli-args",
+                {
+                    "flags": self.flags,
+                    "configurations": self.configurations,
+                    "TARGET": self.TARGET,
+                    "MACHINE_ID": self.MACHINE_ID,
+                },
             )
             conf.configure()
             self.info("[configs/%s] Configured.", conf_name)
