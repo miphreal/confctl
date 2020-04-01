@@ -1,15 +1,19 @@
-from importlib import import_module
 import logging
 import logging.config
 
 import docopt
 
-from confctl.conf import Base, Param, text
-
+from confctl import self_conf
+from confctl.conf import Base, Param
+from confctl.constants import (
+    DEFAULT_CONFCTL_CACHE_DIR,
+    DEFAULT_CONFCTL_CONFIG_FILE,
+    DEFAULT_CONFCTL_USER_CONFIGS,
+)
 
 command_doc = """
 Usage:
-  confctl configure [<configuration>...]
+  confctl configure [self] [<configuration>...]
                    [--target=<target-system>|--nb|--pc|--srv]
                    [--flags=<list-of-flags>] [--machine-id=<unique-node-id>]
 
@@ -57,7 +61,9 @@ def _extract_settings(args):
     options = {}
 
     if args.get("configure", False):
-        options["configurations"] = args["<configuration>"]
+        options["configurations"] = args["<configuration>"] + (
+            ["self"] if args.get("self") else []
+        )
         flags = args["--flags"]
         machine_id = args["--machine-id"]
         target = (
@@ -82,10 +88,9 @@ def _extract_settings(args):
 class _Conf(Base):
     TARGET = Param()
     MACHINE_ID = Param()
-    CONFCTL_CONFIG_DIR = Param.PATH("~/.config/confctl")
-    CONFCTL_CONFIG_FILE = Param.PATH("~/.config/confctl/config")
-    CONFCTL_USER_CONFIGS = Param.PATH("~/.config/confctl/configs")
-    CONFCTL_CACHE_DIR = Param.PATH("~/.cache/confctl")
+    CONFCTL_CONFIG_FILE = Param.PATH(DEFAULT_CONFCTL_CONFIG_FILE)
+    CONFCTL_USER_CONFIGS = Param.PATH(DEFAULT_CONFCTL_USER_CONFIGS)
+    CONFCTL_CACHE_DIR = Param.PATH(DEFAULT_CONFCTL_CACHE_DIR)
 
     flags = Param({"no:full"})
     configurations = Param([])
@@ -99,9 +104,15 @@ class _Conf(Base):
     def _load_configuration(self, name, path):
         import importlib.util
 
-        spec = importlib.util.spec_from_file_location(
-            f"configs.{name}", path / "__init__.py"
-        )
+        if name == "self":
+            return self_conf
+
+        if not path.exists():
+            self.error("Configuration does not exist.", operation=f"configs/{name}")
+            return
+
+        conf_path = path / "__init__.py"
+        spec = importlib.util.spec_from_file_location(f"configs.{name}", conf_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
@@ -115,12 +126,12 @@ class _Conf(Base):
 
     def configure(self):
         self.info(
-            'Configuring "%s" target with %s flags...', text.t(self.TARGET), self.flags,
+            'Configuring "%s" target with %s flags...',
+            self.text.t(self.TARGET),
+            self.flags,
         )
 
-        self.ensure_folders(
-            self.CONFCTL_CONFIG_DIR, self.CONFCTL_CACHE_DIR, silent=True
-        )
+        self.ensure_folders(self.CONFCTL_CACHE_DIR, silent=True)
 
         for conf_name in self._get_configurations():
             skip_flag = f"no:{conf_name}"
@@ -138,6 +149,9 @@ class _Conf(Base):
             )
 
             conf_module = self._load_configuration(conf_name, conf_dir)
+            if not conf_module:
+                continue
+
             conf = conf_module.Configuration(
                 configuration_name=conf_name,
                 configuration_dir=conf_dir,
@@ -147,7 +161,9 @@ class _Conf(Base):
 
             conf.load_file(self.CONFCTL_CONFIG_FILE)
             conf.load_env()
-            conf.load(str(self), self)
+            conf.load(
+                "cli-args", {"flags": self.flags, "configurations": self.configurations}
+            )
             conf.configure()
             self.info("[configs/%s] Configured.", conf_name)
 

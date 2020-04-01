@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "confctl"
-version = "0.2.0"
+version = "0.3.0"
 description = "Simple configuration management"
 authors = ["miphreal <miphreal@gmail.com>"]
 license = "MIT"
@@ -10,7 +10,7 @@ readme = "README.md"
 repository = "https://github.com/miphreal/confctl"
 
 [tool.poetry.scripts]
-poetry = "confctl.cli:main"
+confctl = "confctl.cli:main"
 
 [tool.poetry.dependencies]
 python = "^3.8"

@@ -3,13 +3,13 @@ from pathlib import Path
 import os
 
 
-class text:
+class Text:
     RGB = lambda r, g, b: f"\033[38;2;{r};{g};{b}m"
     TITLE = "\033[95m"
     DEBUG = RGB(169, 169, 169)
     INFO = RGB(0, 64, 133)  # alt "\033[94m"
     OPERATION = RGB(12, 84, 96)
-    WARNING = "\033[93m"
+    WARNING = RGB(133, 100, 4)  # "\033[93m"
     ERROR = "\033[91m"
     REVERSE = "\033[7m"
     FADE = "\033[1m"
@@ -138,12 +138,6 @@ class Param:
         value = obj.__dict__.get(self._name, self.take_default)
         if self._name not in obj.__dict__:
             value = self._handle_value(value)
-            obj.debug(
-                "[%s:use:default-value] %s = %s",
-                str(obj),
-                text.i(self._name),
-                text.i(value),
-            )
         obj.__dict__[self._name] = value
         if dump:
             return self.dump(value)
@@ -160,6 +154,8 @@ class Param:
 
 
 class _ConfigContainer:
+    text = Text
+
     def __init__(self, name, msg_indent=""):
         self.logger = logging.getLogger(f"configs.{name}")
         self.msg_indent = msg_indent
@@ -168,24 +164,39 @@ class _ConfigContainer:
         return f"{self.msg_indent}{msg}"
 
     def log(self, msg, *args, **kwargs):
+        operation = kwargs.pop("operation", None)
+        if operation:
+            msg = f"{self._op_prefix(operation)} {msg}"
         msg = self._handle_msg_indent(msg)
-        self.logger.info(text(text.OPERATION, msg), *args, **kwargs)
+        self.logger.info(self.text(self.text.OPERATION, msg), *args, **kwargs)
 
     def debug(self, msg, *args, **kwargs):
+        operation = kwargs.pop("operation", None)
+        if operation:
+            msg = f"{self._op_prefix(operation, '')} {msg}"
         msg = self._handle_msg_indent(msg)
-        self.logger.debug(text.debug(msg), *args, **kwargs)
+        self.logger.debug(self.text.debug(msg), *args, **kwargs)
 
     def info(self, msg, *args, **kwargs):
+        operation = kwargs.pop("operation", None)
+        if operation:
+            msg = f"{self._op_prefix(operation)} {msg}"
         msg = self._handle_msg_indent(msg)
-        self.logger.info(text.info(msg), *args, **kwargs)
+        self.logger.info(self.text.info(msg), *args, **kwargs)
 
     def warning(self, msg, *args, **kwargs):
+        operation = kwargs.pop("operation", None)
+        if operation:
+            msg = f"{self._warn_prefix(operation)} {msg}"
         msg = self._handle_msg_indent(msg)
-        self.logger.error(text.warning(msg), *args, **kwargs)
+        self.logger.error(self.text.warning(msg), *args, **kwargs)
 
-    def error(self, *args):
+    def error(self, msg, *args, **kwargs):
+        operation = kwargs.pop("operation", None)
+        if operation:
+            msg = f"{self._err_prefix(operation)} {msg}"
         msg = self._handle_msg_indent(msg)
-        self.logger.error(*args)
+        self.logger.error(self.text.err(msg), *args, **kwargs)
 
     @classmethod
     def register_option(cls, name, option):
@@ -224,7 +235,9 @@ class _ConfigContainer:
     def load(self, source_name, options):
         for k in sorted(set(self).intersection(options), key=lambda k: k.lower()):
             v = options[k]
-            self.debug("[%s:load:%s] %s = %s", str(self), source_name, k, v)
+            self.debug(
+                "* %s = %s (from %s)", k, self.text.t(v), self.text.i(source_name)
+            )
             setattr(self, k, v)
 
     def load_file(self, config_file):
@@ -260,8 +273,14 @@ class Base(_ConfigContainer):
     def __str__(self):
         return f"configs/{self.name}"
 
-    def _op_prefix(self, op, sign="✔"):
-        return f"[ {sign} {op:<10} ]"
+    def _op_prefix(self, op, sign="✔️"):
+        return f"{sign} {op:^10} -"
+
+    def _err_prefix(self, op):
+        return self._op_prefix(op, sign="💢")
+
+    def _warn_prefix(self, op):
+        return self._op_prefix(op, sign="⚠")
 
     def _handle_src_dst(self, src, dst):
         src = Path(src).expanduser()
@@ -289,9 +308,7 @@ class Base(_ConfigContainer):
 
         with open(src) as _in:
             template = Template(_in.read())
-            self.log(
-                "%s Rendering %s --> %s", self._op_prefix("template"), src.name, dst
-            )
+            self.log("%s Rendering %s ⇢ %s", self._op_prefix("template"), src.name, dst)
             template.stream(**context).dump(str(dst))
 
         return dst
@@ -322,16 +339,16 @@ class Base(_ConfigContainer):
         any_failed = False
         for cmd in commands:
             if not any_failed:
-                self.log("%s %s", self._op_prefix("sh"), cmd)
+                self.log(cmd, operation="sh")
                 try:
                     output = subprocess.check_output(cmd, shell=True)
                     outputs.append(output)
                 except subprocess.SubprocessError:
-                    self.error("%s %s", self._op_prefix("sh:failed", "❌"), cmd)
+                    self.error(cmd, operation="sh:failed")
                     outputs.append(None)
                     any_failed = True
             else:
-                self.warning("%s %s", self._op_prefix("sh:skipped", "⚠"), cmd)
+                self.warning(cmd, operation="sh:skipped")
 
         return outputs
 
@@ -342,6 +359,7 @@ class Base(_ConfigContainer):
         except OSError:
             pass
         link.symlink_to(target)
+        self.log("%s %s ⇢ %s", self._op_prefix("symlink"), target, link)
 
     def copy_file(self, src, dst=None, symlink=None):
         src, dst = self._handle_src_dst(src, dst)
