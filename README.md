@@ -12,7 +12,7 @@ Helps to organize you configs and how they generated, installed.
 $ confctl configure i3 rofi
 ```
 
-![Example execution](https://github.com/miphreal/python-rofi-menu/raw/master/docs/example_output.png)
+![Example execution](https://github.com/miphreal/confctl/raw/master/docs/example_output.png)
 
 
 ```sh
