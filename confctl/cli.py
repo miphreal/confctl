@@ -194,7 +194,6 @@ def parse_target(t: str):
     extra_ctx = {}
     if len(parts) == 2:
         t, params = parts
-        target = target.lstrip("/")
         extra_ctx = dict(
             parse_qsl(params, keep_blank_values=True), __raw_extra_ctx__=params
         )
