@@ -5,8 +5,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from collections import ChainMap
+from time import sleep
 from typing import Callable, Literal, Mapping
 from urllib.parse import parse_qsl
+from threading import Timer
 
 from jinja2 import Template
 
@@ -54,6 +56,10 @@ class TargetCtl:
     ctx: Ctx
     deps: list[TargetCtl]
 
+    building_start_time: float | None = None
+    building_end_time: float | None = None
+    building_log: list[str]
+
     building_stage: Literal[
         "initialized", "building", "built", "failed"
     ] = "initialized"
@@ -77,6 +83,7 @@ class TargetCtl:
         self.ctx = ctx
         self.deps = []
         self.building_stage = "initialized"
+        self.building_log = []
 
     def __getattr__(self, name):
         return getattr(self.ctx, name)
@@ -87,9 +94,17 @@ class TargetCtl:
     def build(self):
         if self.building_stage != "initialized":
             return
+        self.building_start_time = time.time()
         self.building_stage = "building"
         self.fn(self)
+        self.building_end_time = time.time()
         self.building_stage = "built"
+
+    @property
+    def build_time(self):
+        if self.building_start_time:
+            return (self.building_end_time or time.time()) - self.building_start_time
+        return 0
 
     def dep(self, target: str | Callable):
         t = self.registry.resolve(self.render_str(target))
@@ -113,19 +128,22 @@ class TargetCtl:
             folder = Path(self.render_str(f)).expanduser()
             folder.mkdir(parents=True, exist_ok=True)
 
-    def sh(self, *commands: str):
+    def sh(self, command: str, failsafe=False):
         import subprocess
 
-        outputs = []
-        for cmd in commands:
-            cmd = self.render_str(cmd)
-            try:
-                output = subprocess.check_output(cmd, shell=True)
-                outputs.append(output)
-            except subprocess.SubprocessError:
-                outputs.append(None)
+        cmd = self.render_str(command)
 
-        return outputs
+        process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True
+        )
+
+        while process.poll() is None:
+            log = process.stdout.readline().decode("utf8")
+            self.building_log.append(log)
+        self.building_log.extend(l.decode("utf8") for l in process.stdout.readlines())
+        process.stdout.close()
+
+        return self.building_log
 
     def render_str(self, template, **extra_context):
         if isinstance(template, str):
@@ -227,6 +245,74 @@ def gen_targets(build_file: Path, global_ctx: Ctx, root_path: Path, registry: Re
         )
 
 
+class RepeatTimer(Timer):
+    def run(self):
+        while not self.finished.wait(self.interval):
+            self.function(*self.args, **self.kwargs)
+
+
+from rich import tree, panel
+from rich.console import Console, Group
+from rich.spinner import Spinner
+from rich.status import Status
+from rich.columns import Columns
+from rich.live import Live
+from rich.panel import Panel
+from rich.align import Align
+import time
+
+
+def draw_target_state(t: TargetCtl):
+    name = f"[i grey70]{t.base_name}[/]:[b]{t.name}"
+
+    _build_time = round(t.build_time, 1)
+    if _build_time >= 0.1:
+        if _build_time == int(_build_time):
+            build_time = f"[i]({int(_build_time)}s)[/]"
+        else:
+            build_time = f"[i]({_build_time:.1f}s)[/]"
+    else:
+        build_time = "[i](⚡s)"
+    match t.building_stage:
+        case "initialized":
+            return f"⏳ [sky_blue3 i]{name}"
+        case "building":
+            return Columns([f"🚀 {name}", Status(""), build_time])
+        case "built":
+            return f"✅ [green]{name} {build_time}"
+        case "failed":
+            return f"💢 [red]{name} {build_time}"
+    return f"? {name}"
+
+
+def draw_log(log: list[str], max_output=5):
+    len_log = len(log)
+    log_lines = (
+        f"... truncated {len_log- max_output} line(s) ...\n"
+        if len_log > max_output
+        else ""
+    ) + ("".join(log[-max_output:]))
+    return Panel(log_lines.strip())
+
+
+def draw_target_node(parent_node: tree.Tree, t: TargetCtl):
+    t_node = parent_node.add(draw_target_state(t))
+    if t.building_stage == "building" and t.building_log:
+        t_node.add(draw_log(t.building_log))
+
+    return t_node
+
+
+def draw_info(l: Live, main_targets: list[TargetCtl], reg: Registry):
+
+    targets_tree = tree.Tree("🚀 [b green]Building configurations...", highlight=True)
+
+    for t in main_targets:
+        draw_target_node(targets_tree, t)
+
+    l.update(targets_tree)
+
+
 def main():
     targets: list[str] = sys.argv[1:]
 
@@ -259,9 +345,22 @@ def main():
         t.conf(**extra_ctx)
         build_plan.append(t)
 
-    # Run targets
-    for target in build_plan:
-        target.build()
+    try:
+        console = Console(force_interactive=True, force_terminal=True)
+        with Live(console=console) as l:
+            timer = RepeatTimer(1, draw_info, (l, build_plan, registry))
+            timer.start()
+
+            # Run targets
+            for target in build_plan:
+                target.build()
+
+            sleep(10)
+
+            timer.cancel()
+    except KeyboardInterrupt:
+        timer.cancel()
+        exit(1)
 
 
 if __name__ == "__main__":
