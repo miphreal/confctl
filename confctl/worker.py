@@ -111,8 +111,7 @@ class TargetCtl:
                 folder.mkdir(parents=True, exist_ok=True)
 
     def sudo(self, command: str):
-
-        with self.ops.track_sh(cmd="sdf") as _op:
+        with self.ops.track_sh(cmd=command) as _op:
             cmd = [
                 "/usr/bin/bash",
                 "-c",
