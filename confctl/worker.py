@@ -7,6 +7,7 @@ import shlex
 import typing as t
 
 from collections import ChainMap
+from functools import cache
 from multiprocessing import Process
 from multiprocessing.connection import Connection
 from pathlib import Path
@@ -81,6 +82,7 @@ class TargetCtl:
     def __repr__(self):
         return f"Target({self.fqn})"
 
+    @cache
     def build(self):
         with self.ops.track_build(self):
             return self.fn(self)
@@ -106,16 +108,20 @@ class TargetCtl:
     def ensure_dirs(self, *folders: str | Path):
         with self.ops.track_ensure_dirs(folders) as _op:
             for f in folders:
-                _op.log(f"📁 Ensure [i]{f}[/] path exists.")
                 folder = Path(self.render_str(f)).expanduser()
+                _op.progress(folder=folder)
                 folder.mkdir(parents=True, exist_ok=True)
 
     def sudo(self, command: str):
-        with self.ops.track_sh(cmd=command) as _op:
+        with self.ops.track_sudo(cmd=command) as _op:
+            cmd = self.render_str(command)
+            _op.progress(cmd=cmd)
+
             cmd = [
-                "/usr/bin/bash",
-                "-c",
-                shlex.quote(f"sudo -p SUDO_USER_PASSWORD {command}"),
+                "/usr/bin/sudo",
+                "-p",
+                "SUDO_USER_PASSWORD",
+                *shlex.split(command),
             ]
 
             def write(fd, data):
@@ -134,11 +140,10 @@ class TargetCtl:
                 logs.append(data.decode("utf8"))
 
                 if not sent_passwd and "SUDO_USER_PASSWORD" in "".join(logs):
+                    passwd = os.getenv("CONFCTL_SUDO_PASS", "none")
                     write(
                         fd,
-                        "{}\n".format(os.getenvb(b"CONFCTL_SUDO_PASS", "none")).encode(
-                            "utf8"
-                        ),
+                        "{}\n".format(passwd).encode("utf8"),
                     )
                     sent_passwd = True
 
@@ -156,8 +161,8 @@ class TargetCtl:
 
         with self.ops.track_sh(cmd=command) as _op:
             cmd = self.render_str(command)
+            _op.progress(cmd=cmd)
 
-            _op.log(f"Executing: {cmd}")
             with subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
@@ -167,17 +172,20 @@ class TargetCtl:
                 text=True,
                 env=env,
             ) as process:
+                _op.progress(pid=process.pid)
 
                 while process.poll() is None:
                     if process.stdout is not None:
-                        log = process.stdout.read()
-                        _op.log(log)
-                        logs.append(log)
+                        for log in process.stdout.readlines():
+                            _op.log(log)
+                            logs.append(log)
 
                 if process.stdout is not None:
                     for log in process.stdout.readlines():
                         _op.log(log)
                         logs.append(log)
+
+                _op.progress(exitcode=process.returncode)
 
             return logs
 
@@ -199,9 +207,11 @@ class TargetCtl:
         return self.build_file.parent.joinpath(Path(path).expanduser())
 
     def render(self, src: str | Path, dst: str | Path, **extra_context):
-        with self.ops.track_render(src=src, dst=dst):
+        with self.ops.track_render(src=src, dst=dst) as _op:
             src = self._try_relative_path(self.render_str(src))
             dst = Path(self.render_str(dst)).expanduser()
+            _op.progress(rendered_src=src, rendered_dst=dst)
+
             self.ensure_dirs(dst.parent)
 
             with src.open("rt") as f_in, dst.open("wt") as f_out:

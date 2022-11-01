@@ -90,6 +90,9 @@ class OpsTracking:
     def track_sh(self, cmd: str):
         return self.op("run/sh", cmd=str(cmd))
 
+    def track_sudo(self, cmd: str):
+        return self.op("run/sudo", cmd=str(cmd))
+
     def track_render_str(self, template: str, ctx: dict):
         return self.op("render/str", template=template)
 

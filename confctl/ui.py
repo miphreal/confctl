@@ -28,6 +28,9 @@ class OpBase(ConsoleRenderable):
     logs: list[str] = field(default_factory=list)
     show_content: bool = True
     show_logs: bool = False
+    progress_data: dict = field(default_factory=dict)
+
+    HIDDEN_OPS: t.ClassVar[tuple[str]] = tuple()
 
     @property
     def elapsed(self):
@@ -54,6 +57,9 @@ class OpBase(ConsoleRenderable):
     def is_finished(self):
         return self.state in {"failed", "succeeded"}
 
+    def _visible_ops(self):
+        return [op for op in self.ops if op.op_name not in self.HIDDEN_OPS]
+
     def _build_header(self):
         return f"{self.op_name}: {self.op_data}"
 
@@ -61,7 +67,7 @@ class OpBase(ConsoleRenderable):
         if not self.render_node:
             return
 
-        for op in self.ops:
+        for op in self._visible_ops():
             op.build_ui(self.render_node)
 
         if self.show_logs and self.logs:
@@ -70,11 +76,13 @@ class OpBase(ConsoleRenderable):
             elif self.render_node:
                 # make sure logs are at the end
                 self.render_node.children.remove(self.render_logs)
-                self.render_node.children.append(self.render_node)
+                self.render_node.children.append(self.render_logs)
 
     def build_ui(self, parent_node: tree.Tree):
         if self.render_node is None:
             self.render_node = parent_node.add(self._build_header())
+        else:
+            self.render_node.label = self._build_header()
 
         self.render_node.expanded = self.show_content
         if self.show_content:
@@ -87,7 +95,7 @@ class OpBase(ConsoleRenderable):
         self.started_at = op_time
 
     def handle_progress(self, **data):
-        pass
+        self.progress_data.update(data)
 
     def handle_error(self, error, tb):
         self.error = error
@@ -98,7 +106,8 @@ class OpBase(ConsoleRenderable):
         self.on_finish()
 
     def on_finish(self):
-        self.show_content = False
+        # self.show_content = False  # TODO: uncomment
+        pass
 
     def __rich_console__(self, *args):
         if self.render_node:
@@ -113,11 +122,11 @@ class UIBuildTargetHeader(ConsoleRenderable):
 
     def render_target_state(self):
         op = self.op
-        name = f"[i grey70]{op.base_name}[/]:[b]{op.name}"
+        name = f"[i grey50]{op.base_name}[/]:[b]{op.name}[/]"
 
         _build_time = round(op.elapsed, 1)
         if _build_time >= 0.1:
-            build_time = f"[i]({_build_time:.1f}s)[/]"
+            build_time = f"[i grey70 not bold]({_build_time:.1f}s)[/]"
         else:
             build_time = ""
 
@@ -187,8 +196,9 @@ class UIRenderStr(ConsoleRenderable):
         return Group(*renderables)
 
     def __rich_console__(self, *args):
-        if self.op.template != self.op.rendered:
-            yield self.render(self.op.template, self.op.rendered)
+        rendered = self.op.progress_data.get("rendered")
+        if rendered is not None and self.op.template != rendered:
+            yield self.render(self.op.template, rendered)
 
 
 @dataclass
@@ -197,6 +207,8 @@ class OpBuildTarget(OpBase):
     fqn: str = "unset"
     name: str = "unset"
     show_content: bool = True
+
+    HIDDEN_OPS = ("use/conf",)
 
     @property
     def base_name(self):
@@ -211,26 +223,88 @@ class OpBuildTarget(OpBase):
 
 @dataclass
 class OpRender(OpBase):
-    op_name: str = "build/target"
+    op_name: str = "render/file"
     src: str = "unset"
     dst: str = "unset"
+    show_content: bool = False
 
     def _build_header(self):
-        return f"Render {self.src} ⤏ {self.dst}"
+        src = self.progress_data.get("rendered_src", self.src)
+        dst = self.progress_data.get("rendered_dst", self.dst)
+        return f"📝 {src} ⤏ {dst}"
 
 
 @dataclass
 class OpRenderStr(OpBase):
-    op_name: str = "build/target"
+    op_name: str = "render/str"
     template: str = "unset"
-    rendered: str | None = None
     show_content: bool = False
 
     def _build_header(self):
         return UIRenderStr(self)
 
-    def handle_progress(self, rendered: str):
-        self.rendered = rendered
+
+@dataclass
+class OpRunSh(OpBase):
+    op_name: str = "run/sh"
+    cmd: str = "unset"
+    show_content: bool = False
+    show_logs: bool = True
+    sudo: bool = False
+
+    def _build_header(self):
+        elapsed_time = round(self.elapsed, 1)
+        if elapsed_time >= 1:
+            run_time = f"[grey70 i]({elapsed_time:.1f}s)[/]"
+        else:
+            run_time = ""
+
+        command = self.progress_data.get("cmd", self.cmd)
+
+        exit_code = self.progress_data.get("exitcode")
+        finish_state = "⏳"
+        if isinstance(exit_code, int):
+            if exit_code == 0:
+                finish_state = "🆗"
+            else:
+                finish_state = "💢"
+                command = f"[indian_red]{command} [{exit_code}][/]"
+        else:
+            pid = self.progress_data.get("pid")
+            if pid is not None:
+                command = f"{command} [grey70 i][pid {pid}][/]"
+
+        if self.sudo:
+            command = f"[b]\\[sudo][/] {command}"
+        return f"📜{finish_state} [grey50]{command}[/] {run_time}"
+
+    def on_finish(self):
+        exit_code = self.progress_data.get("exitcode")
+        self.show_content = bool(exit_code is not None and exit_code != 0)
+
+
+@dataclass
+class OpUseDep(OpBase):
+    op_name: str = "use/dep"
+    name: str = "unset"
+
+    def _build_header(self):
+        return f"📎 {self.name}"
+
+
+@dataclass
+class OpUseDirs(OpBase):
+    op_name: str = "use/dirs"
+    dirs: list[str] | None = None
+    folders: list[str] = field(default_factory=list)
+
+    def _build_header(self):
+        if len(self.folders) == 1:
+            return f"📁 [grey50]{self.folders[0]}[/]"
+        return Group(*[f"️📁 [grey50]{f}[/]" for f in self.folders])
+
+    def handle_progress(self, folder):
+        self.folders.append(folder)
 
 
 @dataclass
@@ -241,7 +315,7 @@ class OpBuildConfigs(OpBase):
         if self.render_node is None:
             self.render_node = tree.Tree(
                 "🚀 [b green]Building configurations...",
-                highlight=True,
+                highlight=False,
                 guide_style="grey70",
             )
         self._build_content()
@@ -274,6 +348,14 @@ class OpsView(ConsoleRenderable):
                 return OpRender(src=src, dst=dst)
             case ("render/str", {"template": str(template)}):
                 return OpRenderStr(template=template)
+            case ("run/sh", {"cmd": str(cmd)}):
+                return OpRunSh(cmd=cmd)
+            case ("run/sudo", {"cmd": str(cmd)}):
+                return OpRunSh(cmd=cmd, sudo=True)
+            case ("use/dep", {"name": str(name)}):
+                return OpUseDep(name=name)
+            case ("use/dirs", {"dirs": dirs}):
+                return OpUseDirs(dirs=dirs)
         return OpBase(op_name=op_name, op_data=op_data)
 
     async def listen_to_channel(self, channel: AsyncChannel):
@@ -282,11 +364,14 @@ class OpsView(ConsoleRenderable):
                 case ("op/start", (op_path, op_name, op_data, op_time)):
                     op = self.build_op(op_name=op_name, op_data=op_data)
 
-                    parent = self.get_parent_node(op_path)
-                    if parent:
-                        parent.ops.append(op)
-                    elif self.root_op is None and isinstance(op, OpBuildConfigs):
+                    if self.root_op is None and isinstance(op, OpBuildConfigs):
                         self.root_op = op
+
+                    parent = self.get_parent_node(op_path)
+                    if self.root_op and isinstance(op, OpBuildTarget):
+                        self.root_op.ops.append(op)
+                    elif parent:
+                        parent.ops.append(op)
 
                     self.ops_map[op_path] = op
 
@@ -309,49 +394,3 @@ class OpsView(ConsoleRenderable):
 
     def __rich_console__(self, *args):
         yield self.root_op if self.root_op else "Loading..."
-
-
-def render_operations(t_node: tree.Tree, operations: list):
-    for _op in operations:
-        match _op:
-            case ops_info.DepOperation(target=target) as dep_op:
-                if callable(target):
-                    target = f"fn: {target.__name__}"
-                render_operations(
-                    t_node.add(f"Requested dependency: {target}"), dep_op.nested
-                )
-            case ops_info.RenderStrOperation(
-                template=template, ctx=ctx, rendered=rendered
-            ) as render_str_op:
-                if rendered is not None and template != rendered:
-                    if len(template) > 100:
-                        template = (
-                            f"{template[:100]}...{len(template)-100} chars more..."
-                        )
-                    if len(rendered) > 100:
-                        rendered = (
-                            f"{rendered[:100]}...{len(rendered)-100} chars more..."
-                        )
-                    render_operations(
-                        t_node.add(
-                            Group(
-                                Panel(template, title="Template", title_align="left"),
-                                Panel(rendered, title="Rendered", title_align="left"),
-                            )
-                        ),
-                        render_str_op.nested,
-                    )
-            case ops_info.RenderOperation(src=src, dst=dst) as render_op:
-                render_operations(t_node.add(), render_op.nested)
-            case ops_info.EnsureDirsOperation(folders=folders) as ensure_dirs_op:
-                if len(folders) > 1:
-                    render_operations(
-                        t_node.add(f"🗂️ Ensure {len(folders)} folders exist"),
-                        ensure_dirs_op.nested,
-                    )
-                else:
-                    render_operations(t_node, ensure_dirs_op.nested)
-            case ops_info.ShOperation(cmd=cmd, logs=logs) as sh_op:
-                _node = t_node.add(f"💲 {cmd}")
-                render_operations(_node, sh_op.nested)
-                _node.add(render_log(logs))
