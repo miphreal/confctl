@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 import os
 import pty
 import shlex
@@ -56,6 +55,8 @@ class TargetCtl:
     fn: t.Callable
     ctx: Ctx
 
+    ui_options: dict
+
     def __init__(
         self,
         registry: Registry,
@@ -66,6 +67,7 @@ class TargetCtl:
         name: str,
         fn: t.Callable,
         ctx: Ctx,
+        ui_options: dict | None = None,
     ):
         self.registry = registry
         self.ops = ops
@@ -75,6 +77,7 @@ class TargetCtl:
         self.name = name
         self.fn = fn
         self.ctx = ctx
+        self.ui_options = ui_options or {}
 
     def __getattr__(self, name):
         return getattr(self.ctx, name)
@@ -187,7 +190,7 @@ class TargetCtl:
 
                 _op.progress(exitcode=process.returncode)
 
-            return logs
+        return logs
 
     def render_str(self, template, **extra_context):
         if isinstance(template, str):
@@ -293,16 +296,24 @@ def gen_targets(
 
     for fn in targets_fns:
         target_name = fn.__name__
-        ops_tracking.debug(f"Found target: {base_name}:{target_name}")
+        base_name = normalize_target_name(base_name)
+        fqn = normalize_target_name(f"{base_name}:{target_name}")
+        ui_options = {}
+        ops_tracking.debug(f"Found target: {fqn}")
+
+        if fqn == "//:main":
+            ui_options["visibility"] = "hidden"
+
         yield TargetCtl(
             registry=registry,
             ops=ops_tracking,
             build_file=build_file,
             name=target_name,
-            base_name=normalize_target_name(base_name),
-            fqn=normalize_target_name(f"{base_name}:{target_name}"),
+            base_name=base_name,
+            fqn=fqn,
             ctx=global_ctx.new_child(),
             fn=fn,
+            ui_options=ui_options,
         )
 
 

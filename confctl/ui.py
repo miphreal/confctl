@@ -4,6 +4,7 @@ import asyncio
 import time
 import typing as t
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from rich import tree
 from rich.console import Group, RenderableType, ConsoleRenderable
@@ -12,6 +13,33 @@ from rich.columns import Columns
 from rich.panel import Panel
 
 from confctl.channel import AsyncChannel
+
+CWD = str(Path.cwd().absolute())
+HOME = str(Path.home().absolute())
+
+
+def render_path(path: str | Path, home_color="medium_purple4", cwd_color="steel_blue"):
+    path_obj = Path(path)
+    is_dir = path_obj.exists() and path_obj.is_dir()
+
+    path = str(path).rstrip("/")
+
+    if path.startswith(CWD):
+        path = path.removeprefix(CWD).lstrip("/")
+        path = f"[i {cwd_color}].[/]/{path}"
+
+    elif path.startswith(HOME):
+        path = path.removeprefix(HOME).lstrip("/")
+        path = f"[i {home_color}]~[/]/{path}"
+
+    if "/" in path:
+        parent, name = path.rsplit("/", 1)
+        path = f"[i]{parent}[/]/[b]{name}[/]"
+
+    if is_dir:
+        path = f"{path}[grey78 not bold]/[/]"
+
+    return path
 
 
 @dataclass
@@ -30,7 +58,7 @@ class OpBase(ConsoleRenderable):
     show_logs: bool = False
     progress_data: dict = field(default_factory=dict)
 
-    HIDDEN_OPS: t.ClassVar[tuple[str]] = tuple()
+    HIDDEN_OPS: t.ClassVar[tuple[str, ...]] = tuple()
 
     @property
     def elapsed(self):
@@ -206,9 +234,13 @@ class OpBuildTarget(OpBase):
     op_name: str = "build/target"
     fqn: str = "unset"
     name: str = "unset"
+    ui_options: dict = field(default_factory=dict)
     show_content: bool = True
 
-    HIDDEN_OPS = ("use/conf",)
+    HIDDEN_OPS = (
+        "use/conf",
+        "render/str",
+    )
 
     @property
     def base_name(self):
@@ -216,6 +248,15 @@ class OpBuildTarget(OpBase):
 
     def _build_header(self):
         return UIBuildTargetHeader(self)
+
+    def build_ui(self, parent_node: tree.Tree):
+        super().build_ui(parent_node)
+        if (
+            self.render_node
+            and self.ui_options.get("visibility", "visible") == "hidden"
+            and self.render_node in parent_node.children
+        ):
+            parent_node.children.remove(self.render_node)
 
     def on_finish(self):
         self.show_content = True
@@ -229,9 +270,9 @@ class OpRender(OpBase):
     show_content: bool = False
 
     def _build_header(self):
-        src = self.progress_data.get("rendered_src", self.src)
-        dst = self.progress_data.get("rendered_dst", self.dst)
-        return f"📝 {src} ⤏ {dst}"
+        src = render_path(self.progress_data.get("rendered_src", self.src))
+        dst = render_path(self.progress_data.get("rendered_dst", self.dst))
+        return f"📝 [grey50]{src} [grey70]⤏[/] {dst}[/]"
 
 
 @dataclass
@@ -248,7 +289,7 @@ class OpRenderStr(OpBase):
 class OpRunSh(OpBase):
     op_name: str = "run/sh"
     cmd: str = "unset"
-    show_content: bool = False
+    show_content: bool = True
     show_logs: bool = True
     sudo: bool = False
 
@@ -300,8 +341,8 @@ class OpUseDirs(OpBase):
 
     def _build_header(self):
         if len(self.folders) == 1:
-            return f"📁 [grey50]{self.folders[0]}[/]"
-        return Group(*[f"️📁 [grey50]{f}[/]" for f in self.folders])
+            return f"📁 [grey50]{render_path(self.folders[0])}[/]"
+        return Group(*[f"️📁 [grey50]{render_path(f)}[/]" for f in self.folders])
 
     def handle_progress(self, folder):
         self.folders.append(folder)
@@ -342,8 +383,15 @@ class OpsView(ConsoleRenderable):
         match (op_name, op_data):
             case ("build/configs", _):
                 return OpBuildConfigs()
-            case ("build/target", {"target_fqn": str(fqn), "target_name": str(name)}):
-                return OpBuildTarget(fqn=fqn, name=name)
+            case (
+                "build/target",
+                {
+                    "target_fqn": str(fqn),
+                    "target_name": str(name),
+                    "ui_options": dict(ui_options),
+                },
+            ):
+                return OpBuildTarget(fqn=fqn, name=name, ui_options=ui_options)
             case ("render/file", {"src": str(src), "dst": str(dst)}):
                 return OpRender(src=src, dst=dst)
             case ("render/str", {"template": str(template)}):

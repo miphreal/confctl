@@ -75,7 +75,10 @@ class OpsTracking:
 
     def track_build(self, target: TargetCtl):
         return self.op(
-            "build/target", target_fqn=str(target.fqn), target_name=str(target.name)
+            "build/target",
+            target_fqn=str(target.fqn),
+            target_name=str(target.name),
+            ui_options=dict(target.ui_options),
         )
 
     def track_dep(self, target: str):
