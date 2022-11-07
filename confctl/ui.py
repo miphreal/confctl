@@ -56,7 +56,10 @@ class OpBase(ConsoleRenderable):
     logs: list[str] = field(default_factory=list)
     show_content: bool = True
     show_logs: bool = False
+    show_logs_lines: int = 5
     progress_data: dict = field(default_factory=dict)
+
+    bubble_ops_deps: bool = False
 
     HIDDEN_OPS: t.ClassVar[tuple[str, ...]] = tuple()
 
@@ -85,6 +88,15 @@ class OpBase(ConsoleRenderable):
     def is_finished(self):
         return self.state in {"failed", "succeeded"}
 
+    def _walk_ops(
+        self, ops: list["OpBase"], lookup_fn
+    ) -> t.Generator[OpBase, None, None]:
+        for op in ops:
+            if lookup_fn(op):
+                yield op
+            else:
+                yield from self._walk_ops(op.ops, lookup_fn)
+
     def _visible_ops(self):
         return [op for op in self.ops if op.op_name not in self.HIDDEN_OPS]
 
@@ -106,17 +118,37 @@ class OpBase(ConsoleRenderable):
                 self.render_node.children.remove(self.render_logs)
                 self.render_node.children.append(self.render_logs)
 
+    def _render_deps(self):
+        if self.render_node:
+            deps = self._walk_ops(self.ops, lambda _op: _op.op_name == "use/dep")
+            for dep in deps:
+                if isinstance(dep, OpUseDep):
+                    dep_text = f"📎 {dep.name}"
+                    if all(
+                        dep_text != node.label for node in self.render_node.children
+                    ):
+                        self.render_node.add(dep_text)
+
     def build_ui(self, parent_node: tree.Tree):
         if self.render_node is None:
             self.render_node = parent_node.add(self._build_header())
         else:
             self.render_node.label = self._build_header()
 
+        if self.error:
+            self.show_content = True
+            self.show_logs = True
+
         self.render_node.expanded = self.show_content
         if self.show_content:
             self._build_content()
 
+        if self.bubble_ops_deps:
+            self._render_deps()
+
     def handle_log(self, log: str):
+        if not log.endswith("\n"):
+            log = f"{log}\n"
         self.logs.append(log)
 
     def handle_start(self, op_time: float):
@@ -126,10 +158,12 @@ class OpBase(ConsoleRenderable):
         self.progress_data.update(data)
 
     def handle_error(self, error, tb):
+        """Tracks an exception/error caught during op execution."""
         self.error = error
         self.logs.append(tb)
 
     def handle_finish(self, op_time: float):
+        """Called after operation is finished (even if error has happened)."""
         self.finished_at = op_time
         self.on_finish()
 
@@ -192,7 +226,7 @@ class UIOpLogs(ConsoleRenderable):
 
     def __rich_console__(self, *args):
         if self.op.logs:
-            yield self.render_logs(self.op.logs)
+            yield self.render_logs(self.op.logs, max_output=self.op.show_logs_lines)
 
 
 class UIRenderStr(ConsoleRenderable):
@@ -237,6 +271,8 @@ class OpBuildTarget(OpBase):
     ui_options: dict = field(default_factory=dict)
     show_content: bool = True
 
+    bubble_ops_deps: bool = True
+
     HIDDEN_OPS = (
         "use/conf",
         "render/str",
@@ -251,6 +287,7 @@ class OpBuildTarget(OpBase):
 
     def build_ui(self, parent_node: tree.Tree):
         super().build_ui(parent_node)
+
         if (
             self.render_node
             and self.ui_options.get("visibility", "visible") == "hidden"
@@ -351,6 +388,11 @@ class OpUseDirs(OpBase):
 @dataclass
 class OpBuildConfigs(OpBase):
     op_name: str = "build/configs"
+    HIDDEN_OPS = ("use/conf",)
+
+    # Debug
+    # show_logs: bool = True
+    # show_logs_lines: int = 1000
 
     def build_ui(self):
         if self.render_node is None:
@@ -439,6 +481,9 @@ class OpsView(ConsoleRenderable):
                     op.handle_finish(op_time)
                     if op_name == "build/configs":
                         return
+                case ("internal/debug", (op_path, log)):
+                    op = self.root_op if self.root_op else self.ops_map[op_path]
+                    op.handle_log(f"DEBUG: {log}\n")
 
     def __rich_console__(self, *args):
         yield self.root_op if self.root_op else "Loading..."

@@ -10,7 +10,7 @@ from contextvars import ContextVar
 from contextlib import contextmanager
 
 if t.TYPE_CHECKING:
-    from confctl.worker import TargetCtl
+    from confctl.worker import Target
 
 OpPath = tuple[str, ...]
 
@@ -73,7 +73,7 @@ class OpsTracking:
     def debug(self, log: str):
         self.track_event("internal/debug", (active_op_path.get(), log))
 
-    def track_build(self, target: TargetCtl):
+    def track_build(self, target: Target):
         return self.op(
             "build/target",
             target_fqn=str(target.fqn),

@@ -6,7 +6,8 @@ import shlex
 import typing as t
 
 from collections import ChainMap
-from functools import cache
+from dataclasses import dataclass
+from functools import cached_property, cache
 from multiprocessing import Process
 from multiprocessing.connection import Connection
 from pathlib import Path
@@ -15,6 +16,22 @@ from urllib.parse import parse_qsl
 from confctl.channel import Channel
 from confctl.ops_tracking import OpsTracking
 from confctl.template import Template, LazyTemplate
+
+
+@dataclass
+class CommandExecutionResult:
+    exitcode: int
+    logs: list[str]
+
+    def __bool__(self) -> bool:
+        return self.exitcode == 0
+
+    @cached_property
+    def _logs_content(self) -> str:
+        return "".join(self.logs)
+
+    def __contains__(self, log: str) -> bool:
+        return log in self._logs_content
 
 
 class Ctx(ChainMap):
@@ -42,9 +59,7 @@ def load_python_module(path):
     raise ImportError(f"{path} cannot be loaded or found.")
 
 
-class TargetCtl:
-    TemplateCls = Template
-
+class Target:
     registry: Registry
     ops: OpsTracking
 
@@ -80,6 +95,7 @@ class TargetCtl:
         self.ui_options = ui_options or {}
 
     def __getattr__(self, name):
+        """Proxies attribute access to target's configuration."""
         return getattr(self.ctx, name)
 
     def __repr__(self):
@@ -91,12 +107,19 @@ class TargetCtl:
             return self.fn(self)
 
     def dep(self, target: str):
+        """Requests a dependency."""
         with self.ops.track_dep(target):
             t = self.registry.resolve(self.render_str(target))
-            ret = t.build()
-        return ret if ret is not None else t
+            t.build()
+            return t
 
     def conf(self, **kw):
+        """
+        Declares target configuration.
+
+        Can be called multiple times. The last call overwrites configs with the same name.
+        """
+
         def _nest_ctx(val):
             if isinstance(val, t.Mapping):
                 return Ctx({k: _nest_ctx(v) for k, v in val.items()})
@@ -109,6 +132,7 @@ class TargetCtl:
                 self.ctx[k] = _nest_ctx(v)
 
     def ensure_dirs(self, *folders: str | Path):
+        """Ensures `folders` exist."""
         with self.ops.track_ensure_dirs(folders) as _op:
             for f in folders:
                 folder = Path(self.render_str(f)).expanduser()
@@ -116,6 +140,9 @@ class TargetCtl:
                 folder.mkdir(parents=True, exist_ok=True)
 
     def sudo(self, command: str):
+        """
+        Runs command with super user perms.
+        """
         with self.ops.track_sudo(cmd=command) as _op:
             cmd = self.render_str(command)
             _op.progress(cmd=cmd)
@@ -123,7 +150,7 @@ class TargetCtl:
             cmd = [
                 "/usr/bin/sudo",
                 "-p",
-                "SUDO_USER_PASSWORD",
+                "SUDO_USER_PASSWORD_PROMPT",
                 *shlex.split(command),
             ]
 
@@ -142,7 +169,7 @@ class TargetCtl:
                 data = os.read(fd, 1024)
                 logs.append(data.decode("utf8"))
 
-                if not sent_passwd and "SUDO_USER_PASSWORD" in "".join(logs):
+                if not sent_passwd and "SUDO_USER_PASSWORD_PROMPT" in "".join(logs):
                     passwd = os.getenv("CONFCTL_SUDO_PASS", "none")
                     write(
                         fd,
@@ -153,9 +180,10 @@ class TargetCtl:
                 _op.log(data.decode("utf8"))
                 return data
 
-            pty.spawn(cmd, read)
+            exitcode = pty.spawn(cmd, read)
+            _op.progress(exitcode=exitcode)
 
-            return logs
+            return CommandExecutionResult(exitcode=exitcode, logs=logs)
 
     def sh(self, command: str, env: dict | None = None):
         import subprocess
@@ -190,7 +218,7 @@ class TargetCtl:
 
                 _op.progress(exitcode=process.returncode)
 
-        return logs
+        return CommandExecutionResult(exitcode=process.returncode, logs=logs)
 
     def render_str(self, template, **extra_context):
         if isinstance(template, str):
@@ -198,8 +226,9 @@ class TargetCtl:
             if extra_context:
                 ctx = ctx.new_child(extra_context)
             with self.ops.track_render_str(template=template, ctx=dict(ctx)) as _op:
-                compiled_template = self.TemplateCls(template)
+                compiled_template = Template(template)
                 compiled_template.globals["dep"] = self.dep
+                # compiled_template.filters["arg"] = shlex.quote
 
                 rendered = compiled_template.render(ctx)
                 _op.progress(rendered=rendered)
@@ -229,7 +258,7 @@ def normalize_target_name(name: str):
 
 
 class Registry:
-    targets_map: dict[str, TargetCtl]
+    targets_map: dict[str, Target]
 
     def __init__(self) -> None:
         self.targets_map = {}
@@ -237,7 +266,7 @@ class Registry:
     def __contains__(self, name: str):
         return name in self.targets_map
 
-    def add(self, *targets: TargetCtl):
+    def add(self, *targets: Target):
         for t in targets:
             self.targets_map[t.fqn] = t
 
@@ -284,9 +313,13 @@ def gen_targets(
 ):
     build_module = load_python_module(build_file)
 
+    is_root_build_file = False
+
     base_name = str(build_file.parent.relative_to(root_path))
     if base_name == ".":
+        # it's a root `.confbuild.py`
         base_name = ""
+        is_root_build_file = True
 
     targets_fns = [
         fn
@@ -294,39 +327,65 @@ def gen_targets(
         if callable(fn) and not fn.__name__.startswith("_")
     ]
 
+    root_target: Target | None = None
+
     for fn in targets_fns:
         target_name = fn.__name__
         base_name = normalize_target_name(base_name)
         fqn = normalize_target_name(f"{base_name}:{target_name}")
         ui_options = {}
         ops_tracking.debug(f"Found target: {fqn}")
+        ctx = global_ctx.new_child()
 
         if fqn == "//:main":
+            ctx = global_ctx
             ui_options["visibility"] = "hidden"
 
-        yield TargetCtl(
+        t = Target(
             registry=registry,
             ops=ops_tracking,
             build_file=build_file,
             name=target_name,
             base_name=base_name,
             fqn=fqn,
-            ctx=global_ctx.new_child(),
+            ctx=ctx,
             fn=fn,
             ui_options=ui_options,
         )
 
+        if fqn == "//:main":
+            root_target = t
+
+        yield t
+
+    if is_root_build_file:
+        if not root_target:
+            root_target = Target(
+                registry=registry,
+                ops=ops_tracking,
+                build_file=build_file,
+                name="main",
+                base_name="//",
+                fqn="//:main",
+                ctx=global_ctx,
+                fn=lambda _: None,
+                ui_options={"visibility": "hidden"},
+            )
+
+        root_target.conf(
+            **{k: v for k, v in vars(build_module).items() if not k.startswith("_")}
+        )
+
 
 def build_plan(
-    targets: list[str], registry: Registry, global_ctx: Ctx, ops: OpsTracking
-) -> list[TargetCtl]:
+    targets: list[str], registry: Registry, ops: OpsTracking
+) -> list[Target]:
     # Build a plan to run targets
-    planned_targets: list[TargetCtl] = []
+    planned_targets: list[Target] = []
 
-    # - root main target is always executed (also it defines global context)
+    # - root main target is always executed
     if "//:main" in registry:
         root_target = registry.resolve("//:main")
-        root_target.ctx = global_ctx
         planned_targets.append(root_target)
         ops.debug(f"Added //:main to plan")
 
@@ -369,9 +428,7 @@ def handle_configs(targets: list[str], configs_root: Path, events_channel: Conne
             )
 
         op.log("Building plan...")
-        plan = build_plan(
-            targets, registry=registry, global_ctx=global_ctx, ops=ops_tracking
-        )
+        plan = build_plan(targets, registry=registry, ops=ops_tracking)
 
         op.log("Executing plan...")
         for target in plan:
