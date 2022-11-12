@@ -12,7 +12,8 @@ from rich.status import Status
 from rich.columns import Columns
 from rich.panel import Panel
 
-from confctl.channel import AsyncChannel
+from confctl.wire import events
+from confctl.wire.channel import AsyncChannel
 
 CWD = str(Path.cwd().absolute())
 HOME = str(Path.home().absolute())
@@ -404,6 +405,7 @@ class OpBuildConfigs(OpBase):
         self._build_content()
 
     def __rich_console__(self, *args):
+        self.show_logs = bool(self.error)
         self.build_ui()
         yield self.render_node
 
@@ -451,37 +453,37 @@ class OpsView(ConsoleRenderable):
     async def listen_to_channel(self, channel: AsyncChannel):
         async for event in channel.recv():
             match event:
-                case ("op/start", (op_path, op_name, op_data, op_time)):
-                    op = self.build_op(op_name=op_name, op_data=op_data)
+                case events.EvOpStart() as ev:
+                    op = self.build_op(op_name=ev.op, op_data=ev.data)
 
                     if self.root_op is None and isinstance(op, OpBuildConfigs):
                         self.root_op = op
 
-                    parent = self.get_parent_node(op_path)
+                    parent = self.get_parent_node(ev.op_path)
                     if self.root_op and isinstance(op, OpBuildTarget):
                         self.root_op.ops.append(op)
                     elif parent:
                         parent.ops.append(op)
 
-                    self.ops_map[op_path] = op
+                    self.ops_map[ev.op_path] = op
 
-                    op.handle_start(op_time)
+                    op.handle_start(ev.ts)
 
-                case ("op/log", (op_path, log)):
+                case events.EvOpLog(op_path=op_path, log=log):
                     op = self.ops_map[op_path]
                     op.handle_log(log)
-                case ("op/progress", (op_path, dict(data))):
+                case events.EvOpProgress(op_path=op_path, data=data):
                     op = self.ops_map[op_path]
                     op.handle_progress(**data)
-                case ("op/error", (op_path, error, tb)):
+                case events.EvOpError(op_path=op_path, error=error, tb=tb):
                     op = self.ops_map[op_path]
                     op.handle_error(error, tb)
-                case ("op/finish", (op_path, op_name, op_time)):
+                case events.EvOpFinish(op_path=op_path, op=op_name, ts=ts):
                     op = self.ops_map[op_path]
-                    op.handle_finish(op_time)
+                    op.handle_finish(ts)
                     if op_name == "build/configs":
                         return
-                case ("internal/debug", (op_path, log)):
+                case events.EvDebug(op_path=op_path, log=log):
                     op = self.root_op if self.root_op else self.ops_map[op_path]
                     op.handle_log(f"DEBUG: {log}\n")
 

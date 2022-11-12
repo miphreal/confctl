@@ -7,7 +7,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.live import Live
 
-from confctl.channel import create_channel
+from confctl.wire.channel import create_channel
 from confctl.worker import run_worker
 from confctl.ui import OpsView
 
