@@ -9,7 +9,11 @@
 Build-system-like approach to manage your configs.
 
 ```sh
-$ confctl //tools/kitty
+$ confctl tools/kitty
 ```
 
-TBD
+## Install
+
+```sh
+$ pipx install confctl
+```

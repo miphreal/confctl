@@ -8,12 +8,12 @@ from rich.console import Console
 from rich.live import Live
 
 from confctl.wire.channel import create_channel
-from confctl.worker import run_worker
+from confctl.deps.worker import run_worker
 from confctl.ui import OpsView
 
 
 async def tui_app():
-    targets: list[str] = sys.argv[1:]
+    deps: list[str] = sys.argv[1:]
     configs_root = Path(os.getenv("CONFCTL_CONFIGS_ROOT", str(Path.cwd())))
 
     ui_channel_end, worker_channel_end = create_channel()
@@ -21,7 +21,7 @@ async def tui_app():
     ui = OpsView()
 
     stop_worker = run_worker(
-        targets=targets, configs_root=configs_root, events_channel=worker_channel_end
+        deps=deps, configs_root=configs_root, events_channel=worker_channel_end
     )
 
     try:

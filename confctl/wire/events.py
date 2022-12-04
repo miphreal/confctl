@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from functools import partial
 from multiprocessing.connection import Connection
 from pathlib import Path
 
@@ -17,17 +18,20 @@ OpPath = tuple[str, ...]
 
 active_op_path: ContextVar[OpPath] = ContextVar("active_op_path", default=())
 
-Op = t.Literal[
-    "build/configs",
-    "build/target",
-    "use/dep",
-    "use/dirs",
-    "use/conf",
-    "run/sh",
-    "run/sudo",
-    "render/str",
-    "render/file",
-]
+Op = (
+    t.Literal[
+        "build/configs",
+        "build/target",
+        "use/dep",
+        "use/dirs",
+        "use/conf",
+        "run/sh",
+        "run/sudo",
+        "render/str",
+        "render/file",
+    ]
+    | str
+)
 
 
 @dataclass
@@ -43,28 +47,28 @@ class EvOp(Ev):
 
 @dataclass
 class EvOpStart(EvOp):
-    data: dict
     typ: t.Literal["op/start"] = field(default="op/start", init=False)
-    ts: float = field(default_factory=time.time)
+    data: dict
+    ts: float = field(default_factory=time.time, init=False)
 
 
 @dataclass
 class EvOpLog(EvOp):
-    log: str
     typ: t.Literal["op/log"] = field(default="op/log", init=False)
+    log: str
 
 
 @dataclass
 class EvOpProgress(EvOp):
-    data: dict
     typ: t.Literal["op/progress"] = field(default="op/progress", init=False)
+    data: dict
 
 
 @dataclass
 class EvOpError(EvOp):
+    typ: t.Literal["op/error"] = field(default="op/error", init=False)
     error: str
     tb: str
-    typ: t.Literal["op/error"] = field(default="op/error", init=False)
 
 
 @dataclass
@@ -75,13 +79,18 @@ class EvOpFinish(EvOp):
 
 @dataclass
 class EvDebug(Ev):
+    typ: t.Literal["internal/debug"] = field(default="internal/debug", init=False)
     op_path: OpPath
     log: str
-    typ: t.Literal["internal/debug"] = field(default="internal/debug", init=False)
 
 
 Event: t.TypeAlias = t.Union[
-    EvOpStart, EvOpLog, EvOpProgress, EvOpError, EvOpFinish, EvDebug
+    EvOpStart,
+    EvOpLog,
+    EvOpProgress,
+    EvOpError,
+    EvOpFinish,
+    EvDebug,
 ]
 
 
@@ -115,7 +124,7 @@ class OpsTracking:
         self._ev_channel.send(ev)
 
     @contextmanager
-    def op(self, op_name: Op, **data):
+    def op(self, op_name: str, **data):
         op_path = (*active_op_path.get(), self.get_op_id(op_name))
 
         self.ev(EvOpStart(op=op_name, op_path=op_path, data=data))
@@ -133,6 +142,9 @@ class OpsTracking:
             self.ev(EvOpFinish(op=op_name, op_path=op_path))
             active_op_path.reset(_reset_token)
 
+    def get_track_fn(self, action: str):
+        return partial(self.op, action)
+
     def get_op_id(self, op_name: Op, prefix: str | None = None) -> str:
         next_id = f"{op_name}-{next(self.seq_id)}"
         if prefix:
@@ -141,6 +153,9 @@ class OpsTracking:
 
     def debug(self, log: str):
         self.ev(EvDebug(op_path=active_op_path.get(), log=log))
+
+    def track_build_configs(self):
+        return self.op("build/configs")
 
     def track_build(self, target: Target):
         return self.op(

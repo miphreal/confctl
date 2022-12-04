@@ -13,9 +13,12 @@ from multiprocessing.connection import Connection
 from pathlib import Path
 from urllib.parse import parse_qsl
 
-from confctl.channel import Channel
-from confctl.ops_tracking import OpsTracking
+from confctl.wire.channel import Channel
+from confctl.wire.events import OpsTracking
 from confctl.template import Template, LazyTemplate
+
+
+ROOT_TARGET = "conf::.main"
 
 
 @dataclass
@@ -59,11 +62,31 @@ def load_python_module(path):
     raise ImportError(f"{path} cannot be loaded or found.")
 
 
+class DepState:
+    ...
+
+
+class Resolver:
+    ...
+
+
+@dataclass
+class Dep:
+    resolver: Resolver
+    spec: str
+    state: DepState
+
+    @cache
+    def build(self):
+        ...
+
+
 class Target:
     registry: Registry
     ops: OpsTracking
 
     build_file: Path
+    current_config_dir: Path
     fqn: str
     base_name: str
     name: str
@@ -87,12 +110,17 @@ class Target:
         self.registry = registry
         self.ops = ops
         self.build_file = build_file
+        self.current_config_dir = build_file.parent
         self.fqn = fqn
         self.base_name = base_name
         self.name = name
         self.fn = fn
         self.ctx = ctx
         self.ui_options = ui_options or {}
+
+        self.ctx["fqn"] = self.fqn
+        self.ctx["target_name"] = self.name
+        self.ctx["current_config_dir"] = self.current_config_dir
 
     def __getattr__(self, name):
         """Proxies attribute access to target's configuration."""
@@ -101,13 +129,24 @@ class Target:
     def __repr__(self):
         return f"Target({self.fqn})"
 
+    def __call__(self, *deps: str, **conf):
+        self.conf(**conf)
+
+        for dep in deps:
+            self.dep(dep)
+
     @cache
     def build(self):
         with self.ops.track_build(self):
-            return self.fn(self)
+            self.fn(self)
 
     def dep(self, target: str):
         """Requests a dependency."""
+
+        # Resolve relative target
+        if target.startswith("./"):
+            target = f"{self.base_name}/{target.removeprefix('./')}"
+
         with self.ops.track_dep(target):
             t = self.registry.resolve(self.render_str(target))
             t.build()
@@ -236,7 +275,7 @@ class Target:
         return template
 
     def _try_relative_path(self, path: str | Path) -> Path:
-        return self.build_file.parent.joinpath(Path(path).expanduser())
+        return self.current_config_dir.joinpath(Path(path).expanduser())
 
     def render(self, src: str | Path, dst: str | Path, **extra_context):
         with self.ops.track_render(src=src, dst=dst) as _op:
@@ -280,14 +319,11 @@ class Registry:
             if t.name == "main":
                 self.targets_map[t.base_name] = t
 
-    def resolve(self, target: str | t.Callable):
+    def resolve(self, target: str):
         try:
-            if isinstance(target, str):
-                target = normalize_target_name(target)
-                return self.targets_map[target]
-
-            return next(_t for _t in self.targets_map.values() if _t.fn is target)
-        except (KeyError, StopIteration):
+            target = normalize_target_name(target)
+            return self.targets_map[target]
+        except KeyError:
             raise RuntimeError(f"Target '{target}' cannot be found.")
 
 
@@ -403,20 +439,20 @@ def build_plan(
     return planned_targets
 
 
-def handle_configs(targets: list[str], configs_root: Path, events_channel: Connection):
+def build_targets(targets: list[str], configs_root: Path, events_channel: Connection):
     ops_tracking = OpsTracking(events_channel)
 
     with ops_tracking.op("build/configs") as op:
 
         paths = list(configs_root.rglob(".confbuild.py"))
 
-        op.log(f"Found {len(paths)} configs...")
+        op.debug(f"Found {len(paths)} configs...")
 
         global_ctx = Ctx()
         registry = Registry()
 
         for path in paths:
-            op.log(f"Looking up for targets in: {path}")
+            op.debug(f"Looking up for targets in: {path}")
             registry.add(
                 *gen_targets(
                     path,
@@ -427,20 +463,20 @@ def handle_configs(targets: list[str], configs_root: Path, events_channel: Conne
                 )
             )
 
-        op.log("Building plan...")
+        op.debug("Building plan...")
         plan = build_plan(targets, registry=registry, ops=ops_tracking)
 
-        op.log("Executing plan...")
+        op.debug("Executing plan...")
         for target in plan:
-            op.log(f"Start building {target.fqn}")
+            op.debug(f"Start building {target.fqn}")
             target.build()
 
-        op.log("Finished.")
+        op.debug("Finished.")
 
 
 def run_worker(targets: list[str], configs_root: Path, events_channel: Channel):
     proc = Process(
-        target=handle_configs,
+        target=build_targets,
         kwargs={
             "targets": targets,
             "configs_root": configs_root,
