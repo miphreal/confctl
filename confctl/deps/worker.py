@@ -9,37 +9,40 @@ from pathlib import Path
 from confctl.wire.channel import Channel
 from confctl.wire.events import OpsTracking
 
-from .dep import Ctx, Registry
+from .resolvers import ConfResolver
+from .registry import Registry
+from .ctx import Ctx
 
 
-def build_deps(deps: list[str], configs_root: Path, events_channel: Connection):
+def build_specs(specs: list[str], configs_root: Path, events_channel: Connection):
     ops_tracking = OpsTracking(events_channel)
 
-    with ops_tracking.op("build/configs") as op:
+    with ops_tracking.op("build/specs") as op:
         global_ctx = Ctx()
 
-        registry = Registry(configs_root=configs_root, global_ctx=global_ctx)
+        registry = Registry(global_ctx=global_ctx)
 
         global_ctx["global_ctx"] = global_ctx
         global_ctx["ops"] = ops_tracking
         global_ctx["registry"] = registry
+        global_ctx["configs_root"] = configs_root
 
         op.debug("Setup resolvers")
-        registry.setup_resolvers()
+        registry.setup_resolvers([ConfResolver])
 
-        op.debug("Resolving deps...")
-        for dep in map(registry.dep, deps):
-            op.debug(f"Start building {dep.spec.fqn}")
-            dep.resolve()
+        op.debug("Resolving specs...")
+        for spec in specs:
+            op.debug(f"Start resolving {spec}")
+            registry.resolve(spec)
 
         op.debug("Finished.")
 
 
-def run_worker(deps: list[str], configs_root: Path, events_channel: Channel):
+def run_worker(specs: list[str], configs_root: Path, events_channel: Channel):
     proc = Process(
-        target=build_deps,
+        target=build_specs,
         kwargs={
-            "deps": deps,
+            "specs": specs,
             "configs_root": configs_root,
             "events_channel": events_channel,
         },

@@ -178,14 +178,17 @@ class OpBase(ConsoleRenderable):
 
 
 class UIBuildTargetHeader(ConsoleRenderable):
-    op: OpBuildTarget
+    op: OpBuildDep
 
-    def __init__(self, op: OpBuildTarget):
+    def __init__(self, op: OpBuildDep):
         self.op = op
 
     def render_target_state(self):
         op = self.op
-        name = f"[i grey50]{op.base_name}[/]:[b]{op.name}[/]"
+        name = f"[i grey50]{op.base_name}[/]:[b]{op.target_name}[/]"
+        resolver = self.op.resolver
+        if resolver:
+            name = f"[i grey70]{resolver}::[/]{name}"
 
         _build_time = round(op.elapsed, 1)
         if _build_time >= 0.1:
@@ -265,8 +268,8 @@ class UIRenderStr(ConsoleRenderable):
 
 
 @dataclass
-class OpBuildTarget(OpBase):
-    op_name: str = "build/target"
+class OpBuildDep(OpBase):
+    op_name: str = "build/dep"
     fqn: str = "unset"
     name: str = "unset"
     ui_options: dict = field(default_factory=dict)
@@ -280,8 +283,20 @@ class OpBuildTarget(OpBase):
     )
 
     @property
+    def target_name(self):
+        return self.progress_data.get("actual_target", self.name)
+
+    @property
+    def resolver(self):
+        parts = self.fqn.split("::", 1)
+        if len(parts) == 2:
+            return parts[0]
+        return ""
+
+    @property
     def base_name(self):
-        return self.fqn.replace(f":{self.name}", "")
+        fqn = self.fqn.split("::", 1)[-1]
+        return fqn.replace(f":{self.target_name or '...'}", "")
 
     def _build_header(self):
         return UIBuildTargetHeader(self)
@@ -388,7 +403,7 @@ class OpUseDirs(OpBase):
 
 @dataclass
 class OpBuildConfigs(OpBase):
-    op_name: str = "build/configs"
+    op_name: str = "build/specs"
     HIDDEN_OPS = ("use/conf",)
 
     # Debug
@@ -425,17 +440,17 @@ class OpsView(ConsoleRenderable):
 
     def build_op(self, op_name: str, op_data):
         match (op_name, op_data):
-            case ("build/configs", _):
+            case ("build/specs", _):
                 return OpBuildConfigs()
             case (
-                "build/target",
+                "build/dep",
                 {
                     "target_fqn": str(fqn),
                     "target_name": str(name),
                     "ui_options": dict(ui_options),
                 },
             ):
-                return OpBuildTarget(fqn=fqn, name=name, ui_options=ui_options)
+                return OpBuildDep(fqn=fqn, name=name, ui_options=ui_options)
             case ("render/file", {"src": str(src), "dst": str(dst)}):
                 return OpRender(src=src, dst=dst)
             case ("render/str", {"template": str(template)}):
@@ -460,7 +475,7 @@ class OpsView(ConsoleRenderable):
                         self.root_op = op
 
                     parent = self.get_parent_node(ev.op_path)
-                    if self.root_op and isinstance(op, OpBuildTarget):
+                    if self.root_op and isinstance(op, OpBuildDep):
                         self.root_op.ops.append(op)
                     elif parent:
                         parent.ops.append(op)
@@ -481,7 +496,7 @@ class OpsView(ConsoleRenderable):
                 case events.EvOpFinish(op_path=op_path, op=op_name, ts=ts):
                     op = self.ops_map[op_path]
                     op.handle_finish(ts)
-                    if op_name == "build/configs":
+                    if op_name == "build/specs":
                         return
                 case events.EvDebug(op_path=op_path, log=log):
                     op = self.root_op if self.root_op else self.ops_map[op_path]

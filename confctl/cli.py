@@ -13,7 +13,7 @@ from confctl.ui import OpsView
 
 
 async def tui_app():
-    deps: list[str] = sys.argv[1:]
+    specs: list[str] = sys.argv[1:]
     configs_root = Path(os.getenv("CONFCTL_CONFIGS_ROOT", str(Path.cwd())))
 
     ui_channel_end, worker_channel_end = create_channel()
@@ -21,7 +21,7 @@ async def tui_app():
     ui = OpsView()
 
     stop_worker = run_worker(
-        deps=deps, configs_root=configs_root, events_channel=worker_channel_end
+        specs=specs, configs_root=configs_root, events_channel=worker_channel_end
     )
 
     try:
