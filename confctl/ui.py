@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import time
 import typing as t
+from collections import defaultdict
 from dataclasses import dataclass, field
+from inspect import isclass
 from pathlib import Path
 
 from rich import tree
@@ -43,10 +44,14 @@ def render_path(path: str | Path, home_color="medium_purple4", cwd_color="steel_
     return path
 
 
+class OpData(defaultdict):
+    def __getattr__(self, name):
+        return self.get(name, "<unset>")
+
+
 @dataclass
 class OpBase(ConsoleRenderable):
     op_name: str
-    op_data: dict | None = None
     ops: list[OpBase] = field(default_factory=list)
     started_at: float | None = None
     finished_at: float | None = None
@@ -58,11 +63,17 @@ class OpBase(ConsoleRenderable):
     show_content: bool = True
     show_logs: bool = False
     show_logs_lines: int = 5
-    progress_data: dict = field(default_factory=dict)
+    data: OpData = field(default_factory=OpData)
 
     bubble_ops_deps: bool = False
 
     HIDDEN_OPS: t.ClassVar[tuple[str, ...]] = tuple()
+
+    def __post_init__(self):
+        data = OpData()
+        if self.data:
+            data.update(self.data)
+        self.data = data
 
     @property
     def elapsed(self):
@@ -102,7 +113,7 @@ class OpBase(ConsoleRenderable):
         return [op for op in self.ops if op.op_name not in self.HIDDEN_OPS]
 
     def _build_header(self):
-        return f"{self.op_name}: {self.op_data}"
+        return f"{self.op_name}: {self.data}"
 
     def _build_content(self):
         if not self.render_node:
@@ -156,7 +167,7 @@ class OpBase(ConsoleRenderable):
         self.started_at = op_time
 
     def handle_progress(self, **data):
-        self.progress_data.update(data)
+        self.data.update(data)
 
     def handle_error(self, error, tb):
         """Tracks an exception/error caught during op execution."""
@@ -169,8 +180,7 @@ class OpBase(ConsoleRenderable):
         self.on_finish()
 
     def on_finish(self):
-        # self.show_content = False  # TODO: uncomment
-        pass
+        self.show_content = False
 
     def __rich_console__(self, *args):
         if self.render_node:
@@ -262,17 +272,14 @@ class UIRenderStr(ConsoleRenderable):
         return Group(*renderables)
 
     def __rich_console__(self, *args):
-        rendered = self.op.progress_data.get("rendered")
-        if rendered is not None and self.op.template != rendered:
-            yield self.render(self.op.template, rendered)
+        rendered = self.op.data.get("rendered")
+        if rendered is not None and self.op.data.template != rendered:
+            yield self.render(self.op.data.template, rendered)
 
 
 @dataclass
 class OpBuildDep(OpBase):
     op_name: str = "build/dep"
-    fqn: str = "unset"
-    name: str = "unset"
-    ui_options: dict = field(default_factory=dict)
     show_content: bool = True
 
     bubble_ops_deps: bool = True
@@ -283,8 +290,20 @@ class OpBuildDep(OpBase):
     )
 
     @property
+    def fqn(self):
+        return self.data.target_fqn or ""
+
+    @property
+    def name(self):
+        return self.data.target_name
+
+    @property
+    def ui_options(self):
+        return self.data.get("ui_options") or {}
+
+    @property
     def target_name(self):
-        return self.progress_data.get("actual_target", self.name)
+        return self.data.get("actual_target", self.name)
 
     @property
     def resolver(self):
@@ -318,20 +337,17 @@ class OpBuildDep(OpBase):
 @dataclass
 class OpRender(OpBase):
     op_name: str = "render/file"
-    src: str = "unset"
-    dst: str = "unset"
     show_content: bool = False
 
     def _build_header(self):
-        src = render_path(self.progress_data.get("rendered_src", self.src))
-        dst = render_path(self.progress_data.get("rendered_dst", self.dst))
+        src = render_path(self.data.src)
+        dst = render_path(self.data.dst)
         return f"📝 [grey50]{src} [grey70]⤏[/] {dst}[/]"
 
 
 @dataclass
 class OpRenderStr(OpBase):
     op_name: str = "render/str"
-    template: str = "unset"
     show_content: bool = False
 
     def _build_header(self):
@@ -341,10 +357,8 @@ class OpRenderStr(OpBase):
 @dataclass
 class OpRunSh(OpBase):
     op_name: str = "run/sh"
-    cmd: str = "unset"
     show_content: bool = True
     show_logs: bool = True
-    sudo: bool = False
 
     def _build_header(self):
         elapsed_time = round(self.elapsed, 1)
@@ -353,9 +367,8 @@ class OpRunSh(OpBase):
         else:
             run_time = ""
 
-        command = self.progress_data.get("cmd", self.cmd)
-
-        exit_code = self.progress_data.get("exitcode")
+        command = self.data.cmd
+        exit_code = self.data.get("exitcode")
         finish_state = "⏳"
         if isinstance(exit_code, int):
             if exit_code == 0:
@@ -364,23 +377,26 @@ class OpRunSh(OpBase):
                 finish_state = "💢"
                 command = f"[indian_red]{command} [{exit_code}][/]"
         else:
-            pid = self.progress_data.get("pid")
+            pid = self.data.pid
             if pid is not None:
                 command = f"{command} [grey70 i][pid {pid}][/]"
 
-        if self.sudo:
+        if self.data.get("sudo"):
             command = f"[b]\\[sudo][/] {command}"
         return f"📜{finish_state} [grey50]{command}[/] {run_time}"
 
     def on_finish(self):
-        exit_code = self.progress_data.get("exitcode")
+        exit_code = self.data.get("exitcode")
         self.show_content = bool(exit_code is not None and exit_code != 0)
 
 
 @dataclass
 class OpUseDep(OpBase):
     op_name: str = "use/dep"
-    name: str = "unset"
+
+    @property
+    def name(self):
+        return self.data.get("spec", "unset")
 
     def _build_header(self):
         return f"📎 {self.name}"
@@ -389,7 +405,6 @@ class OpUseDep(OpBase):
 @dataclass
 class OpUseDirs(OpBase):
     op_name: str = "use/dirs"
-    dirs: list[str] | None = None
     folders: list[str] = field(default_factory=list)
 
     def _build_header(self):
@@ -425,6 +440,11 @@ class OpBuildConfigs(OpBase):
         yield self.render_node
 
 
+RENDERABLE_OPS = [
+    cls for cls in globals().values() if isclass(cls) and issubclass(cls, OpBase)
+]
+
+
 class OpsView(ConsoleRenderable):
     root_op: OpBuildConfigs | None = None
 
@@ -439,31 +459,10 @@ class OpsView(ConsoleRenderable):
         return None
 
     def build_op(self, op_name: str, op_data):
-        match (op_name, op_data):
-            case ("build/specs", _):
-                return OpBuildConfigs()
-            case (
-                "build/dep",
-                {
-                    "target_fqn": str(fqn),
-                    "target_name": str(name),
-                    "ui_options": dict(ui_options),
-                },
-            ):
-                return OpBuildDep(fqn=fqn, name=name, ui_options=ui_options)
-            case ("render/file", {"src": str(src), "dst": str(dst)}):
-                return OpRender(src=src, dst=dst)
-            case ("render/str", {"template": str(template)}):
-                return OpRenderStr(template=template)
-            case ("run/sh", {"cmd": str(cmd)}):
-                return OpRunSh(cmd=cmd)
-            case ("run/sudo", {"cmd": str(cmd)}):
-                return OpRunSh(cmd=cmd, sudo=True)
-            case ("use/dep", {"name": str(name)}):
-                return OpUseDep(name=name)
-            case ("use/dirs", {"dirs": dirs}):
-                return OpUseDirs(dirs=dirs)
-        return OpBase(op_name=op_name, op_data=op_data)
+        for cls in RENDERABLE_OPS:
+            if getattr(cls, "op_name", "unknown") == op_name:
+                return cls(op_name=op_name, data=op_data)
+        return OpBase(op_name=op_name, data=op_data)
 
     async def listen_to_channel(self, channel: AsyncChannel):
         async for event in channel.recv():

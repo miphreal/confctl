@@ -142,7 +142,7 @@ def render(act: Action, src: str | Path, dst: str | Path, **extra_context):
     if current_config_dir:
         src = current_config_dir.joinpath(src)
 
-    act.progress(rendered_src=src, rendered_dst=dst)
+    act.progress(src=src, dst=dst)
 
     ensure_dirs_fn(dst.parent)
 
