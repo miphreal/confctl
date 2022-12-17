@@ -15,7 +15,8 @@ class Dep:
     ctx: Ctx
 
     # actions that can be triggered on dependency
-    actions: dict[str, t.Callable] = field(default_factory=dict)
+    actions: list[t.Callable] = field(default_factory=list)
+    _actions_map: dict[str, t.Callable] = field(default_factory=dict)
 
     # do not trigger error globally
     failsafe: bool = False
@@ -26,36 +27,28 @@ class Dep:
 
     ui_options: UIOptions = field(default_factory=UIOptions)
 
+    def __post_init__(self):
+        from .action import get_action_name
+
+        for fn in self.actions:
+            # the actions are accessible by function name of by its alias
+            self._actions_map[fn.__name__] = fn
+            action_name = get_action_name(fn)
+            if action_name:
+                self._actions_map[action_name] = fn
+
     def __getattr__(self, name):
         """Proxies attribute access to target's configuration."""
-        if name in self.actions:
+        if name in self._actions_map:
             return self.get_action(name)
         return getattr(self.ctx, name)
 
     def __hash__(self) -> int:
         return hash(self.spec)
 
-    def __call__(self, *deps: str, **conf):
-        self.conf(**conf)
-
-        for dep in deps:
-            self.dep(dep)
-
     @cache
     def get_action(self, action_name: str):
-        fn = next(
-            (
-                f
-                for f_name, f in self.actions.items()
-                if action_name == f_name
-                or getattr(f, "__confclt_action_name__", "") == action_name
-            ),
-            None,
-        )
-
-        if fn is None:
-            fn = self.ctx[action_name]  # TODO: improve how actions are stored in `ctx`
-
+        fn = self._actions_map.get(action_name)
         if callable(fn):
             return lambda *args, **kwargs: fn(
                 *args, **kwargs, __ctx=self.ctx, __caller=self

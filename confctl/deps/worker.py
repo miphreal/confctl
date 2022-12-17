@@ -9,9 +9,11 @@ from pathlib import Path
 from confctl.wire.channel import Channel
 from confctl.wire.events import OpsTracking
 
-from .resolvers import ConfResolver
+from .resolvers import ConfResolver, PathResolver
 from .registry import Registry
 from .ctx import Ctx
+
+DEFAULT_RESOLVERS = [ConfResolver, PathResolver]
 
 
 def build_specs(specs: list[str], configs_root: Path, events_channel: Connection):
@@ -28,7 +30,7 @@ def build_specs(specs: list[str], configs_root: Path, events_channel: Connection
         global_ctx["configs_root"] = configs_root
 
         op.debug("Setup resolvers")
-        registry.setup_resolvers([ConfResolver])
+        registry.setup_resolvers(DEFAULT_RESOLVERS)
 
         op.debug("Resolving specs...")
         for spec in specs:

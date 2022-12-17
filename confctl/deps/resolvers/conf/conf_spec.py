@@ -22,6 +22,13 @@ class ConfSpec(Spec):
 
 
 def parse_conf_spec(raw_spec: str, ctx: Ctx) -> ConfSpec:
+    """
+    Parses conf specs, e.g.
+        tools/shell:zsh
+        ./shell:zsh
+        conf::tools/terminal:kitty
+        conf::tools/i3?no-restart
+    """
     common_spec = parse_spec(
         raw_spec=raw_spec, default_resolver_name=CONF_RESOLVER_NAME
     )
@@ -51,15 +58,24 @@ def parse_conf_spec(raw_spec: str, ctx: Ctx) -> ConfSpec:
         target_name = ""
 
     conf_path_part = conf_path_part.strip()
-    conf_path = (
-        (ctx.configs_root / conf_path_part) if conf_path_part else ctx.configs_root
-    ) / ".confbuild.py"
+
+    conf_dir = ctx.configs_root
+
+    if conf_path_part:
+        if conf_path_part.startswith(("./", "../")):
+            conf_dir: Path = ctx.get("current_config_dir") or conf_dir
+        conf_dir = (conf_dir / conf_path_part).resolve()
+
+    if spec.startswith(("./", "../")):
+        spec = str(conf_dir.relative_to(ctx.configs_root))
+        if target_name:
+            spec = f"{spec}:{target_name}"
 
     return ConfSpec(
         resolver_name=CONF_RESOLVER_NAME,
         raw_spec=raw_spec,
         spec=spec,
-        conf_path=conf_path,
+        conf_path=conf_dir / ".confbuild.py",
         target=target_name,
         extra_ctx=extra_ctx,
     )
@@ -71,3 +87,11 @@ class ConfDep(Dep):
 
     def __hash__(self) -> int:
         return hash(self.spec)
+
+    def __call__(self, *deps: str, **configs):
+        for dep_spec in deps:
+            self.dep(dep_spec)
+
+        self.conf(**configs)
+
+        return self

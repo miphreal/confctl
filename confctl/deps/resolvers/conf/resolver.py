@@ -33,9 +33,12 @@ class ConfResolver:
         if raw_spec.startswith(f"{CONF_RESOLVER_NAME}::"):
             return True
 
-        spec = parse_conf_spec(raw_spec, ctx)
-        if spec.conf_path.exists():
-            return True
+        try:
+            spec = parse_conf_spec(raw_spec, ctx)
+            if spec.resolver_name == CONF_RESOLVER_NAME and spec.conf_path.exists():
+                return True
+        except AssertionError:
+            return False
 
         return False
 
@@ -49,13 +52,13 @@ class ConfResolver:
             d = ConfDep(
                 spec=spec,
                 ctx=ctx.global_ctx,
-                actions={**default_actions},
+                actions=default_actions.copy(),
                 # Do not fail if root resolver func is not not defined
                 failsafe=True,
                 ui_options={"visibility": "hidden"},
             )
         else:
-            d = ConfDep(spec=spec, ctx=ctx.new_child(), actions={**default_actions})
+            d = ConfDep(spec=spec, ctx=ctx.new_child(), actions=default_actions.copy())
 
         self._resolved[spec.fqn] = d
 

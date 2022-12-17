@@ -16,7 +16,7 @@ class Resolver(t.Protocol):
     def can_resolve(self, raw_spec: str, ctx: Ctx) -> bool:
         ...
 
-    def resolve(self, raw_spec: str, ctx: Ctx) -> Dep:
+    def resolve(self, raw_spec: str, ctx: Ctx) -> t.Any:
         ...
 
 
@@ -25,7 +25,7 @@ class Registry:
     global_ctx: Ctx
     resolvers: list[Resolver] = field(default_factory=list)
 
-    def resolve(self, raw_spec: str, ctx: Ctx | None = None) -> Dep:
+    def resolve(self, raw_spec: str, ctx: Ctx | None = None) -> t.Any:
         ctx = ctx or self.global_ctx
         for resolver in self.resolvers:
             if resolver.can_resolve(raw_spec=raw_spec, ctx=ctx):

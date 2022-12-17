@@ -4,7 +4,7 @@ from collections import ChainMap
 from pathlib import Path
 
 
-from confctl.template import LazyTemplate
+from confctl.utils.template import LazyTemplate
 
 if t.TYPE_CHECKING:
     from confctl.deps.registry import Registry

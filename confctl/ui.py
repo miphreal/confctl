@@ -440,9 +440,7 @@ class OpBuildConfigs(OpBase):
         yield self.render_node
 
 
-RENDERABLE_OPS = [
-    cls for cls in globals().values() if isclass(cls) and issubclass(cls, OpBase)
-]
+OPS_UI = [cls for cls in globals().values() if isclass(cls) and issubclass(cls, OpBase)]
 
 
 class OpsView(ConsoleRenderable):
@@ -459,7 +457,7 @@ class OpsView(ConsoleRenderable):
         return None
 
     def build_op(self, op_name: str, op_data):
-        for cls in RENDERABLE_OPS:
+        for cls in OPS_UI:
             if getattr(cls, "op_name", "unknown") == op_name:
                 return cls(op_name=op_name, data=op_data)
         return OpBase(op_name=op_name, data=op_data)
