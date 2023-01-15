@@ -88,10 +88,14 @@ class ConfDep(Dep):
     def __hash__(self) -> int:
         return hash(self.spec)
 
-    def __call__(self, *deps: str, **configs):
-        for dep_spec in deps:
-            self.dep(dep_spec)
-
+    def __call__(self, **configs):
         self.conf(**configs)
-
         return self
+
+    def __getitem__(self, key):
+        dep_action = self.get_action("dep")
+        if isinstance(key, str):
+            return dep_action(key)
+        if isinstance(key, (tuple, str)):
+            return list(map(dep_action, key))
+        raise TypeError(f"`key` must be string or list of strings")

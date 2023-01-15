@@ -441,6 +441,9 @@ class OpBuildConfigs(OpBase):
 
 
 OPS_UI = [cls for cls in globals().values() if isclass(cls) and issubclass(cls, OpBase)]
+OPS_UI_MAP = {
+    op_name: cls for cls in OPS_UI if (op_name := getattr(cls, "op_name", None))
+}
 
 
 class OpsView(ConsoleRenderable):
@@ -457,9 +460,8 @@ class OpsView(ConsoleRenderable):
         return None
 
     def build_op(self, op_name: str, op_data):
-        for cls in OPS_UI:
-            if getattr(cls, "op_name", "unknown") == op_name:
-                return cls(op_name=op_name, data=op_data)
+        if cls := OPS_UI_MAP.get(op_name):
+            return cls(op_name=op_name, data=op_data)
         return OpBase(op_name=op_name, data=op_data)
 
     async def listen_to_channel(self, channel: AsyncChannel):

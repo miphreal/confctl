@@ -57,6 +57,9 @@ def mkpath(act: Action):
 
 
 class PathResolver:
+    """
+    Path resolver allows to declare path:: or dir:: as dependency.
+    """
     @classmethod
     def setup(cls, registry: Registry):
         registry.register_resolver(cls())

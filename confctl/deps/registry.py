@@ -5,7 +5,6 @@ import typing as t
 from dataclasses import dataclass, field
 
 from .ctx import Ctx
-from .dep import Dep
 
 
 class Resolver(t.Protocol):

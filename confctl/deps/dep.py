@@ -29,6 +29,9 @@ class Dep:
 
     def __post_init__(self):
         from .action import get_action_name
+        from .resolvers.common.actions import default_actions
+
+        self.actions.extend(default_actions)
 
         for fn in self.actions:
             # the actions are accessible by function name of by its alias
@@ -37,7 +40,7 @@ class Dep:
             if action_name:
                 self._actions_map[action_name] = fn
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str):
         """Proxies attribute access to target's configuration."""
         if name in self._actions_map:
             return self.get_action(name)
