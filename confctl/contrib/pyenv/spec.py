@@ -1,6 +1,5 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from confctl.deps.dep import Dep
 from confctl.deps.spec import parse_spec, Spec
 
 
@@ -46,20 +45,3 @@ def parse_pyenv_spec(raw_spec: str) -> PyEnvSpec:
         version=version,
         venv=venv,
     )
-
-
-@dataclass
-class PyEnvDep(Dep):
-    spec: PyEnvSpec
-    env_state: dict = field(default_factory=dict)
-
-    def __call__(self, *state):
-        for s in state:
-            if isinstance(s, dict):
-                self.state(**s)
-            if isinstance(s, (tuple, list)):
-                self.state(*s)
-        return self
-
-    def __hash__(self) -> int:
-        return hash(self.spec)

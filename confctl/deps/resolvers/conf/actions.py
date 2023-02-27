@@ -1,12 +1,9 @@
 import types
 import typing as t
 
-from functools import cache
-from pathlib import Path
-
-from confctl.deps.action import action, Action, is_action
+from confctl.deps.actions import action, Action
 from confctl.deps.ctx import Ctx
-from .conf_spec import ConfDep as Dep
+from confctl.utils.py_module import load_python_module
 
 
 @action("use/conf", prep_track_data=lambda a, d: {"configs": list(d["kw"])})
@@ -32,19 +29,6 @@ def conf(act: Action, **kw):
         execution_ctx[k] = _nest_ctx(v)
 
 
-@cache
-def _load_python_module(path: Path):
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("tmp", path)
-    if spec is not None and spec.loader is not None:
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
-
-    raise ImportError(f"{path} cannot be loaded or found.")
-
-
 def _load_module_level_config(module: types.ModuleType):
     return {
         k: v
@@ -62,11 +46,13 @@ def _load_module_level_config(module: types.ModuleType):
     },
 )
 def build(act: Action):
-    assert isinstance(act.caller, Dep), "Can be called only for `Dep` instance"
+    from .resolver import ConfDep
+
+    assert isinstance(act.caller, ConfDep), "Can be called only for `Dep` instance"
     dep = act.caller
     spec = dep.spec
 
-    build_module = _load_python_module(spec.conf_path)
+    build_module = load_python_module(spec.conf_path)
 
     fn_names = [spec.target] if spec.target else [spec.conf_path.parent.name, "main"]
 
@@ -86,6 +72,3 @@ def build(act: Action):
 
     act.progress(actual_target=build_fn.__name__)
     return build_fn(dep)
-
-
-default_actions = [fn for fn in globals().values() if is_action(fn)]

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from multiprocessing import Process
 from multiprocessing.connection import Connection
 from pathlib import Path
@@ -7,11 +5,15 @@ from pathlib import Path
 from confctl.wire.channel import Channel
 from confctl.wire.events import OpsTracking
 
-from .resolvers import ConfResolver, PathResolver, PyEnvResolver
 from .registry import Registry
 from .ctx import Ctx
 
-DEFAULT_RESOLVERS = [ConfResolver, PathResolver, PyEnvResolver]
+
+DEFAULT_RESOLVERS = [
+    "confctl.deps.resolvers.conf.setup",
+    "confctl.deps.resolvers.path.setup",
+    "confctl.contrib.pyenv.setup",
+]
 
 
 def build_specs(specs: list[str], configs_root: Path, events_channel: Connection):

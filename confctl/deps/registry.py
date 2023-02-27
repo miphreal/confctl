@@ -4,14 +4,11 @@ import typing as t
 
 from dataclasses import dataclass, field
 
+from confctl.utils.py_module import load_python_obj
 from .ctx import Ctx
 
 
 class Resolver(t.Protocol):
-    @classmethod
-    def setup(cls, registry: Registry):
-        ...
-
     def can_resolve(self, raw_spec: str, ctx: Ctx) -> bool:
         ...
 
@@ -35,6 +32,12 @@ class Registry:
     def register_resolver(self, resolver: Resolver):
         self.resolvers.append(resolver)
 
-    def setup_resolvers(self, resolvers_classes: list[t.Type[Resolver]]):
-        for cls in resolvers_classes:
-            cls.setup(self)
+    def setup_resolvers(self, resolvers_refs: list[t.Any]):
+        for resolver_setup_ref in resolvers_refs:
+            if isinstance(resolver_setup_ref, str):
+                resolver_setup_ref = load_python_obj(resolver_setup_ref)
+
+            if callable(resolver_setup_ref):
+                resolver_setup_ref(self)
+            else:
+                raise RuntimeError(f"{resolver_setup_ref!r} is invalid setup fn.")

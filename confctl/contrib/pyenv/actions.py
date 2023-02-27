@@ -1,5 +1,4 @@
-from confctl.deps.action import action, Action, is_action
-from .spec import PyEnvDep as Dep
+from confctl.deps.actions import action, Action
 
 
 @action(
@@ -12,7 +11,11 @@ from .spec import PyEnvDep as Dep
     },
 )
 def install(act: Action):
-    assert isinstance(act.caller, Dep), "Can be called only for `Dep` instance"
+    from .resolver import PyEnvDep
+
+    assert isinstance(
+        act.caller, PyEnvDep
+    ), "Can be called only for `PyEnvDep` instance"
     dep = act.caller
     spec = dep.spec
 
@@ -46,7 +49,11 @@ def install(act: Action):
     },
 )
 def state(act: Action, *state_request):
-    assert isinstance(act.caller, Dep), "Can be called only for `Dep` instance"
+    from .resolver import PyEnvDep
+
+    assert isinstance(
+        act.caller, PyEnvDep
+    ), "Can be called only for `PyEnvDep` instance"
     dep = act.caller
     spec = dep.spec
 
@@ -82,6 +89,3 @@ def state(act: Action, *state_request):
             return state
 
     return dep.state
-
-
-default_actions = [fn for fn in globals().values() if is_action(fn)]

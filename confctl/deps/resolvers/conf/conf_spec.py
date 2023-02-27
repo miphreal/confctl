@@ -1,10 +1,8 @@
-import typing as t
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qsl
 
 from confctl.deps.ctx import Ctx
-from confctl.deps.dep import Dep
 from confctl.deps.spec import parse_spec, Spec
 
 
@@ -79,23 +77,3 @@ def parse_conf_spec(raw_spec: str, ctx: Ctx) -> ConfSpec:
         target=target_name,
         extra_ctx=extra_ctx,
     )
-
-
-@dataclass
-class ConfDep(Dep):
-    spec: ConfSpec
-
-    def __hash__(self) -> int:
-        return hash(self.spec)
-
-    def __call__(self, **configs):
-        self.conf(**configs)
-        return self
-
-    def __getitem__(self, key):
-        dep_action = self.get_action("dep")
-        if isinstance(key, str):
-            return dep_action(key)
-        if isinstance(key, (tuple, str)):
-            return list(map(dep_action, key))
-        raise TypeError(f"`key` must be string or list of strings")

@@ -4,11 +4,10 @@ import typing as t
 from dataclasses import dataclass
 from pathlib import Path
 
-from confctl.deps.action import action, Action, is_action
+from confctl.deps.actions import action, Action
 from confctl.deps.ctx import Ctx
 from confctl.deps.dep import Dep
 from confctl.deps.spec import parse_spec, Spec
-from .actions import render_str, render, dep
 
 if t.TYPE_CHECKING:
     from confctl.deps.registry import Registry
@@ -48,8 +47,9 @@ def parse_path_spec(raw_spec: str):
 
 @action("mkpath")
 def mkpath(act: Action):
+    """Makes sure the given folder exist"""
     if act.caller:
-        spec: PathSpec = act.caller.spec
+        spec = t.cast(PathSpec, act.caller.spec)
         if spec.resolver_name == "path":
             spec.path.parent.mkdir(exist_ok=True, parents=True)
         elif spec.resolver_name == "dir":
@@ -60,9 +60,6 @@ class PathResolver:
     """
     Path resolver allows to declare path:: or dir:: as dependency.
     """
-    @classmethod
-    def setup(cls, registry: Registry):
-        registry.register_resolver(cls())
 
     def can_resolve(self, raw_spec: str, ctx: Ctx):
         spec = parse_spec(raw_spec, "path")
@@ -74,12 +71,12 @@ class PathResolver:
         spec = parse_path_spec(raw_spec)
 
         if spec.resolver_name in ("path", "dir"):
-            d = PathDep(
-                spec=spec,
-                ctx=ctx.new_child(),
-                actions=[mkpath, render, render_str, dep],
-            )
+            d = PathDep(spec=spec, ctx=ctx.new_child(), actions=[mkpath])
             d.mkpath()
             return d.spec.path
 
         raise RuntimeError(f"Cannot resolve {raw_spec} as path or dir")
+
+
+def setup(registry: Registry):
+    registry.register_resolver(PathResolver())

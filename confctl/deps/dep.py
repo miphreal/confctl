@@ -28,10 +28,9 @@ class Dep:
     ui_options: UIOptions = field(default_factory=UIOptions)
 
     def __post_init__(self):
-        from .action import get_action_name
-        from .resolvers.common.actions import default_actions
+        from .actions import get_action_name, render, render_str, dep, sh, sudo
 
-        self.actions.extend(default_actions)
+        self.actions.extend([dep, render, render_str, sh, sudo])
 
         for fn in self.actions:
             # the actions are accessible by function name of by its alias
