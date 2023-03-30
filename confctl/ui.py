@@ -19,6 +19,12 @@ from confctl.wire.channel import AsyncChannel
 CWD = str(Path.cwd().absolute())
 HOME = str(Path.home().absolute())
 
+class RenderFn(ConsoleRenderable):
+    def __init__(self, render):
+        self.render = render
+
+    def __rich_console__(self, *args):
+        yield self.render()
 
 def render_path(path: str | Path, home_color="medium_purple4", cwd_color="steel_blue"):
     path_obj = Path(path)
@@ -59,6 +65,7 @@ class OpBase(ConsoleRenderable):
     render_node: tree.Tree | None = None
     render_logs: tree.Tree | None = None
     error: str | None = None
+    stop_reason: tuple[str, dict | None] | None = None
     logs: list[str] = field(default_factory=list)
     show_content: bool = True
     show_logs: bool = False
@@ -92,7 +99,7 @@ class OpBase(ConsoleRenderable):
             return "init"
         if self.finished_at is None:
             return "in-progress"
-        if self.error is not None:
+        if self.error is not None or self.stop_reason:
             return "failed"
         return "succeeded"
 
@@ -113,7 +120,7 @@ class OpBase(ConsoleRenderable):
         return [op for op in self.ops if op.op_name not in self.HIDDEN_OPS]
 
     def _build_header(self):
-        return f"{self.op_name}: {self.data}"
+        return RenderFn(lambda: f"{self.op_name}: {self.data}")
 
     def _build_content(self):
         if not self.render_node:
@@ -151,7 +158,7 @@ class OpBase(ConsoleRenderable):
             self.show_content = True
             self.show_logs = True
 
-        self.render_node.expanded = self.show_content
+        # self.render_node.expanded = self.show_content
         if self.show_content:
             self._build_content()
 
@@ -165,6 +172,9 @@ class OpBase(ConsoleRenderable):
 
     def handle_start(self, op_time: float):
         self.started_at = op_time
+        
+    def handle_stop(self, reason: str, data: dict | None = None):
+        self.stop_reason = reason, data
 
     def handle_progress(self, **data):
         self.data.update(data)
@@ -172,7 +182,8 @@ class OpBase(ConsoleRenderable):
     def handle_error(self, error, tb):
         """Tracks an exception/error caught during op execution."""
         self.error = error
-        self.logs.append(tb)
+        if (tb):
+            self.logs.append(tb)
 
     def handle_finish(self, op_time: float):
         """Called after operation is finished (even if error has happened)."""
@@ -180,7 +191,7 @@ class OpBase(ConsoleRenderable):
         self.on_finish()
 
     def on_finish(self):
-        self.show_content = False
+        self.show_content = bool(self.error or self.stop_reason)
 
     def __rich_console__(self, *args):
         if self.render_node:
@@ -329,9 +340,6 @@ class OpBuildDep(OpBase):
             and self.render_node in parent_node.children
         ):
             parent_node.children.remove(self.render_node)
-
-    def on_finish(self):
-        self.show_content = True
 
 
 @dataclass
@@ -492,6 +500,9 @@ class OpsView(ConsoleRenderable):
                 case events.EvOpError(op_path=op_path, error=error, tb=tb):
                     op = self.ops_map[op_path]
                     op.handle_error(error, tb)
+                case events.EvOpStop(op_path=op_path, reason=reason, data=data):
+                    op = self.ops_map[op_path]
+                    op.handle_stop(reason, data)
                 case events.EvOpFinish(op_path=op_path, op=op_name, ts=ts):
                     op = self.ops_map[op_path]
                     op.handle_finish(ts)

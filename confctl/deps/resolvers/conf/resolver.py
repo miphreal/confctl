@@ -3,8 +3,10 @@ from __future__ import annotations
 import typing as t
 from dataclasses import dataclass
 
+from confctl.deps import actions
 from confctl.deps.ctx import Ctx
 from confctl.deps.dep import Dep
+from confctl.utils.py_module import load_python_module, load_module_level_config
 from .actions import conf, build
 from .conf_spec import CONF_RESOLVER_NAME, parse_conf_spec, ConfSpec
 
@@ -49,6 +51,9 @@ class ConfDep(Dep):
         if isinstance(key, (tuple, str)):
             return list(map(dep_action, key))
         raise TypeError(f"`key` must be string or list of strings")
+
+    def force_stop(self, reason: str, data: dict | None = None):
+        self.ctx.ops.force_stop(reason, data)
 
 
 class ConfResolver:
@@ -102,12 +107,26 @@ def setup(registry: Registry):
     registry.register_resolver(conf_resolver)
 
     # Handle root configuration
-    configs_root = registry.global_ctx.configs_root
+    global_ctx = registry.global_ctx
+    configs_root = global_ctx.configs_root
     root_conf = configs_root / ".confbuild.py"
     if root_conf.exists():
-        root_conf = conf_resolver.resolve(
-            ConfResolver.root_conf_dep, registry.global_ctx
+        root_conf = load_python_module(root_conf)
+        # set global default actions
+        global_ctx.update(
+            {
+                actions.get_action_name(a): actions.prep_action_as_fn(a, ctx=global_ctx)
+                for a in vars(actions).values()
+                if actions.is_action(a)
+            }
         )
-
-        confctl_resolvers = getattr(root_conf, "CONFCTL_RESOLVERS", [])
+        # set configuration from root `root_conf`
+        conf(
+            **load_module_level_config(root_conf),
+            __ctx=global_ctx,
+        )
+        # load extra resolvers
+        confctl_resolvers = getattr(global_ctx, "CONFCTL_RESOLVERS", [])
         registry.setup_resolvers(confctl_resolvers)
+
+

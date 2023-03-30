@@ -28,9 +28,9 @@ class Dep:
     ui_options: UIOptions = field(default_factory=UIOptions)
 
     def __post_init__(self):
-        from .actions import get_action_name, render, render_str, dep, sh, sudo
+        from .actions import get_action_name, render, render_str, dep, sh, sudo, msg
 
-        self.actions.extend([dep, render, render_str, sh, sudo])
+        self.actions.extend([dep, render, render_str, sh, sudo, msg])
 
         for fn in self.actions:
             # the actions are accessible by function name of by its alias
@@ -50,11 +50,10 @@ class Dep:
 
     @cache
     def get_action(self, action_name: str):
+        from .actions import prep_action_as_fn
         fn = self._actions_map.get(action_name)
         if callable(fn):
-            return lambda *args, **kwargs: fn(
-                *args, **kwargs, __ctx=self.ctx, __caller=self
-            )
+            return prep_action_as_fn(fn, ctx=self.ctx, caller=self)
 
         raise RuntimeError(
             f"Cannot resolve {action_name} action for {self.spec} dependency."

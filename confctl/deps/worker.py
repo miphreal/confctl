@@ -10,9 +10,9 @@ from .ctx import Ctx
 
 
 DEFAULT_RESOLVERS = [
+    "confctl.deps.resolvers.path.path",
+    "confctl.deps.resolvers.path.dir",
     "confctl.deps.resolvers.conf.setup",
-    "confctl.deps.resolvers.path.setup",
-    "confctl.contrib.pyenv.setup",
 ]
 
 
@@ -33,6 +33,8 @@ def build_specs(specs: list[str], configs_root: Path, events_channel: Connection
         registry.setup_resolvers(DEFAULT_RESOLVERS)
 
         op.debug("Resolving specs...")
+        if not specs:
+            specs = ['conf:::main']
         for spec in specs:
             op.debug(f"Start resolving {spec}")
             registry.resolve(spec)

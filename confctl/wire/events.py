@@ -36,6 +36,20 @@ class EvOpStart(EvOp):
 
 
 @dataclass
+class EvOpStop(EvOp):
+    typ: t.Literal["op/stop"] = field(default="op/stop", init=False)
+    reason: str
+    data: dict | None
+
+class ForceStop(Exception):
+    data: dict | None
+    reason: str
+    def __init__(self, reason: str, data: dict | None = None):
+        self.reason = reason
+        self.data = data
+
+
+@dataclass
 class EvOpLog(EvOp):
     typ: t.Literal["op/log"] = field(default="op/log", init=False)
     log: str
@@ -72,6 +86,7 @@ Event: t.TypeAlias = t.Union[
     EvOpLog,
     EvOpProgress,
     EvOpError,
+    EvOpStop,
     EvOpFinish,
     EvDebug,
 ]
@@ -87,10 +102,10 @@ class OpWrapper:
 
     def log(self, log: str):
         self.ops.ev(EvOpLog(op=self.op, op_path=self.op_path, log=log))
-
+        
     def debug(self, log: str):
         self.ops.ev(EvDebug(op_path=self.op_path, log=log))
-
+    
     def progress(self, **data):
         self.ops.ev(EvOpProgress(op=self.op, op_path=self.op_path, data=data))
 
@@ -117,6 +132,9 @@ class OpsTracking:
         op_wrapper = OpWrapper(self, op_name, op_path)
         try:
             yield op_wrapper
+
+        except ForceStop as e:
+            self.ev(EvOpStop(op=op_name, op_path=op_path, reason=e.reason, data=e.data))
         except Exception as e:
             tb = traceback.format_exc()
             self.ev(EvOpError(op=op_name, op_path=op_path, error=repr(e), tb=tb))
@@ -136,3 +154,6 @@ class OpsTracking:
 
     def debug(self, log: str):
         self.ev(EvDebug(op_path=active_op_path.get(), log=log))
+
+    def force_stop(self, reason: str, data: dict|None = None):
+        raise ForceStop(reason, data)

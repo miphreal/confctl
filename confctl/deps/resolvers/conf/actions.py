@@ -3,7 +3,7 @@ import typing as t
 
 from confctl.deps.actions import action, Action
 from confctl.deps.ctx import Ctx
-from confctl.utils.py_module import load_python_module
+from confctl.utils.py_module import load_python_module, load_module_level_config
 
 
 @action("use/conf", prep_track_data=lambda a, d: {"configs": list(d["kw"])})
@@ -27,14 +27,6 @@ def conf(act: Action, **kw):
 
     for k, v in kw.items():
         execution_ctx[k] = _nest_ctx(v)
-
-
-def _load_module_level_config(module: types.ModuleType):
-    return {
-        k: v
-        for k, v in vars(module).items()
-        if not k.startswith("_") and not callable(v)
-    }
 
 
 @action(
@@ -63,7 +55,7 @@ def build(act: Action):
 
     dep.conf(
         current_config_dir=spec.conf_path.parent,
-        **_load_module_level_config(build_module),
+        **load_module_level_config(build_module),
         **dep.spec.extra_ctx,
     )
 
@@ -71,4 +63,5 @@ def build(act: Action):
         raise RuntimeError(f"Cannot find build function for {spec} in {spec.conf_path}")
 
     act.progress(actual_target=build_fn.__name__)
+
     return build_fn(dep)

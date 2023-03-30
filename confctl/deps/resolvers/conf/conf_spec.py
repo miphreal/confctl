@@ -57,23 +57,28 @@ def parse_conf_spec(raw_spec: str, ctx: Ctx) -> ConfSpec:
 
     conf_path_part = conf_path_part.strip()
 
-    conf_dir = ctx.configs_root
+    conf_path = ctx.configs_root
 
     if conf_path_part:
         if conf_path_part.startswith(("./", "../")):
-            conf_dir: Path = ctx.get("current_config_dir") or conf_dir
-        conf_dir = (conf_dir / conf_path_part).resolve()
+            conf_path: Path = ctx.get("current_config_dir") or conf_path
+        conf_path = (conf_path / conf_path_part).resolve()
 
     if spec.startswith(("./", "../")):
-        spec = str(conf_dir.relative_to(ctx.configs_root))
+        spec = str(conf_path.relative_to(ctx.configs_root))
         if target_name:
             spec = f"{spec}:{target_name}"
+
+    if conf_path.with_suffix('.py').exists():
+        conf_path = conf_path.with_suffix('.py') 
+    else:
+        conf_path = conf_path / ".confbuild.py"
 
     return ConfSpec(
         resolver_name=CONF_RESOLVER_NAME,
         raw_spec=raw_spec,
         spec=spec,
-        conf_path=conf_dir / ".confbuild.py",
+        conf_path=conf_path,
         target=target_name,
         extra_ctx=extra_ctx,
     )

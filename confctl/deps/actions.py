@@ -108,10 +108,25 @@ def get_action_name(fn) -> str | None:
         return getattr(fn, FN_ACTION_NAME_ATTR)
     return None
 
+def prep_action_as_fn(fn, ctx: Ctx, caller: t.Any = None):
+    return lambda *args, **kwargs: fn(
+        *args, **kwargs, __ctx=ctx, __caller=caller
+    )
 
 #
 # Common actions
 #
+@action(
+    "show/msg",
+    prep_track_data=lambda a, d: dict(msg=d["msg"]),
+)
+def msg(act: Action, msg: str, **extra_context):
+    render_str_fn = act.resolve_action("render/str")
+    rendered = render_str_fn(msg, **extra_context)
+    act.progress(msg=rendered)
+    return msg
+
+
 @action(
     "render/str",
     prep_track_data=lambda a, d: dict(

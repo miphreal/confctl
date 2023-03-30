@@ -1,4 +1,5 @@
 import importlib.util
+import types
 
 from functools import cache
 from importlib import import_module
@@ -26,3 +27,12 @@ def load_python_obj(path: str):
     path, obj_name = path.rsplit(".", 1)
     module = import_module(path)
     return getattr(module, obj_name)
+
+
+def load_module_level_config(module: types.ModuleType):
+    return {
+        k: v
+        for k, v in vars(module).items()
+        if not k.startswith("_") and not callable(v)
+    }
+
