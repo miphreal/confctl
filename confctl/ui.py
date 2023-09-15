@@ -172,7 +172,11 @@ class OpBase(ConsoleRenderable):
 
     def handle_start(self, op_time: float):
         self.started_at = op_time
-        
+        self.on_start()
+
+    def on_start(self):
+        pass
+
     def handle_stop(self, reason: str, data: dict | None = None):
         self.stop_reason = reason, data
 
@@ -365,8 +369,6 @@ class OpRenderStr(OpBase):
 @dataclass
 class OpRunSh(OpBase):
     op_name: str = "run/sh"
-    show_content: bool = True
-    show_logs: bool = True
 
     def _build_header(self):
         elapsed_time = round(self.elapsed, 1)
@@ -393,9 +395,13 @@ class OpRunSh(OpBase):
             command = f"[b]\\[sudo][/] {command}"
         return f"📜{finish_state} [grey50]{command}[/] {run_time}"
 
+    def on_start(self):
+        self.show_logs = True
+
     def on_finish(self):
         exit_code = self.data.get("exitcode")
         self.show_content = bool(exit_code is not None and exit_code != 0)
+        self.show_logs = self.show_content
 
 
 @dataclass
@@ -409,19 +415,57 @@ class OpUseDep(OpBase):
     def _build_header(self):
         return f"📎 {self.name}"
 
+class UIRunBrewHeader(ConsoleRenderable):
+    op: OpBase
+
+    def __init__(self, op: OpBase):
+        self.op = op
+
+    def render_install_state(self):
+        op = self.op
+        spec = op.data['action_src'].partition('::')[-1]
+
+        name = f"[b]{spec}[/]"
+
+        _build_time = round(op.elapsed, 1)
+        if _build_time >= 0.1:
+            build_time = f"[i grey70 not bold]({_build_time:.1f}s)[/]"
+        else:
+            build_time = ""
+
+        match op.state:
+            case "init":
+                return f"⏳ [sky_blue3 i]{name}"
+            case "in-progress":
+                return Columns([f"🚀 {name}", Status(""), build_time])
+            case "succeeded":
+                if build_time and _build_time == int(_build_time):
+                    build_time = f"[i]({int(_build_time)}s)[/]"
+                status = self.op.data['status']
+                match status:
+                    case 'unchanged':
+                        return f"🔶 [yellow]{name} [i grey70]{status}[/] {build_time}"
+                    case 'installed':
+                        return f"✅ [green]{name} [i grey70]{status}[/] {build_time}"
+                    case 'failed':
+                        return f"💢 [red]{name} {build_time}"
+
+                return f"[green]{name} {build_time}"
+
+            case "failed":
+                return f"💢 [red]{name} {build_time}"
+        return f"? {name}"
+
+    def __rich_console__(self, *args):
+        yield self.render_install_state()
 
 @dataclass
-class OpUseDirs(OpBase):
-    op_name: str = "use/dirs"
-    folders: list[str] = field(default_factory=list)
+class OpRunBrew(OpBase):
+    op_name: str = "run/brew"
 
     def _build_header(self):
-        if len(self.folders) == 1:
-            return f"📁 [grey50]{render_path(self.folders[0])}[/]"
-        return Group(*[f"️📁 [grey50]{render_path(f)}[/]" for f in self.folders])
-
-    def handle_progress(self, folder):
-        self.folders.append(folder)
+        spec = self.data['action_src']
+        return UIRunBrewHeader(self)
 
 
 @dataclass

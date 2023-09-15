@@ -59,18 +59,22 @@ def parse_conf_spec(raw_spec: str, ctx: Ctx) -> ConfSpec:
 
     conf_path = ctx.configs_root
 
+    # try to build relative paths relatively the current configuration
+    if conf_path_part.startswith(("./", "../")) or not conf_path_part:
+        conf_path = ctx.get("current_config_dir") or conf_path
+
     if conf_path_part:
-        if conf_path_part.startswith(("./", "../")):
-            conf_path: Path = ctx.get("current_config_dir") or conf_path
         conf_path = (conf_path / conf_path_part).resolve()
 
-    if spec.startswith(("./", "../")):
+    # re-shape `spec` to show path to targes relatively the root config folder
+    if spec.startswith(("./", "../", ":")):
         spec = str(conf_path.relative_to(ctx.configs_root))
         if target_name:
             spec = f"{spec}:{target_name}"
 
+    # build a path to the actual config python module
     if conf_path.with_suffix('.py').exists():
-        conf_path = conf_path.with_suffix('.py') 
+        conf_path = conf_path.with_suffix('.py')
     else:
         conf_path = conf_path / ".confbuild.py"
 
