@@ -207,7 +207,7 @@ class CommandExecutionResult:
 
 
 @action("run/sh")
-def sh(act: Action, cmd: str, env: dict | None = None):
+def sh(act: Action, cmd: str, env: dict | None = None, log_progress: bool = True):
     import subprocess
 
     render_str_fn = act.resolve_action("render/str")
@@ -231,13 +231,18 @@ def sh(act: Action, cmd: str, env: dict | None = None):
         while process.poll() is None:
             if process.stdout is not None:
                 for log in process.stdout.readlines():
-                    act.log(log)
+                    if log_progress:
+                        act.log(log)
                     logs.append(log)
 
         if process.stdout is not None:
             for log in process.stdout.readlines():
-                act.log(log)
+                if log_progress:
+                    act.log(log)
                 logs.append(log)
+
+        if not log_progress:
+            act.log(''.join(logs))
 
         act.progress(exitcode=process.returncode)
 

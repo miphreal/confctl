@@ -245,12 +245,17 @@ class UIOpLogs(ConsoleRenderable):
         self.op = op
 
     def render_logs(self, logs: list[str], max_output=5):
-        len_log = len(logs)
+        logs_text = "".join(logs)
+        nl_count = logs_text.count("\n")
+        logs_text.find("\n")
+
+        logs = logs_text.rsplit('\n', maxsplit=max_output+1)
+
         log_lines = (
-            f"... truncated {len_log- max_output} line(s) ...\n"
-            if len_log > max_output
+            f"... truncated {nl_count - max_output} line(s) ...\n"
+            if nl_count > max_output
             else ""
-        ) + ("".join(logs[-max_output:]))
+        ) + ("\n".join(logs[-max_output:]))
         return Panel(log_lines.strip(), title="Logs", title_align="left")
 
     def __rich_console__(self, *args):
