@@ -2,12 +2,23 @@
 name = "confctl"
 version = "0.4.0"
 description = "Simple configuration management"
-authors = ["miphreal <miphreal@gmail.com>"]
+uthors = [
+  {name = "Evgeny Lychkovsky", email = "miphreal@gmail.com"},
+]
+maintainers = [
+  {name = "Evgeny Lychkovsky", email = "miphreal@gmail.com"},
+]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/miphreal/confctl"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "jinja2>=3.1.4",
+    "rich>=13.8.0",
+]
+
+[project.scripts]
+confctl = "confctl.cli:main"
 
 [tool.uv]
 dev-dependencies = [
@@ -15,3 +26,7 @@ dev-dependencies = [
     "mypy>=1.11.2",
     "ruff>=0.6.4",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
