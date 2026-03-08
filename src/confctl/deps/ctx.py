@@ -1,22 +1,12 @@
-import typing as t
-
 from collections import ChainMap
-from pathlib import Path
 
 
 from confctl.utils.template import LazyTemplate
 
-if t.TYPE_CHECKING:
-    from confctl.deps.registry import Registry
-    from confctl.wire.events import OpsTracking
-
 
 class Ctx(ChainMap):
-    # Globally available context values
+    # Reference to the root context
     global_ctx: "Ctx"
-    registry: "Registry"
-    ops: "OpsTracking"
-    configs_root: Path
 
     def __getattr__(self, name):
         try:

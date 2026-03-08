@@ -19,9 +19,6 @@ class AsyncChannel(Protocol):
     async def recv(self) -> AsyncGenerator:
         ...
 
-    def reset_sleeping_delay(self):
-        ...
-
 
 def create_channel() -> tuple[AsyncChannel, Channel]:
     """
@@ -37,49 +34,29 @@ def create_channel() -> tuple[AsyncChannel, Channel]:
 
 
 class AsyncConn:
-    DEFAULT_SLEEP = 0.05
-    MAX_SLEEP = 3
-    GROWING_SLEEP_MULTIPLIER = 1.5
-
     _conn: Connection
 
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
-        self._reset_sleeping_delay = asyncio.Event()
-        self._sleeping_delay = self.DEFAULT_SLEEP
 
     def send(self, ev, /):
         self._conn.send(ev)
-
-    def reset_sleeping_delay(self):
-        self._reset_sleeping_delay.set()
 
     async def recv(self):
         loop = asyncio.get_running_loop()
 
         while True:
-            if self._conn.poll():
-                ev = self._conn.recv()
-                await asyncio.sleep(0.01)
-                self._sleeping_delay = self.DEFAULT_SLEEP
-                yield ev
-            else:
-                self._reset_sleeping_delay.clear()
-                sleeping_reset = loop.create_task(self._reset_sleeping_delay.wait())
-                wait_timeout = loop.create_task(asyncio.sleep(self._sleeping_delay))
-                _, pending = await asyncio.wait(
-                    [sleeping_reset, wait_timeout],
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-                for t in pending:
-                    t.cancel()
+            # Drain all available messages
+            while self._conn.poll():
+                try:
+                    yield self._conn.recv()
+                except EOFError:
+                    return
 
-                if self._reset_sleeping_delay.is_set():
-                    # means we explicitly triggered `_reset_sleeping_delay` event
-                    self._sleeping_delay = self.DEFAULT_SLEEP
-                else:
-                    # means we exceeded `self._sleeping_delay`
-                    self._sleeping_delay = min(
-                        self._sleeping_delay * self.GROWING_SLEEP_MULTIPLIER,
-                        self.MAX_SLEEP,
-                    )
+            # Wait for the fd to become readable
+            readable = asyncio.Event()
+            loop.add_reader(self._conn.fileno(), readable.set)
+            try:
+                await readable.wait()
+            finally:
+                loop.remove_reader(self._conn.fileno())

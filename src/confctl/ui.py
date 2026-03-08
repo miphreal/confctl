@@ -4,7 +4,6 @@ import time
 import typing as t
 from collections import defaultdict
 from dataclasses import dataclass, field
-from inspect import isclass
 from pathlib import Path
 
 from rich import tree
@@ -18,6 +17,16 @@ from confctl.wire.channel import AsyncChannel
 
 CWD = str(Path.cwd().absolute())
 HOME = str(Path.home().absolute())
+
+# Op UI class registry
+_ops_ui_registry: dict[str, type["OpBase"]] = {}
+
+
+def register_op_ui(cls: type["OpBase"]) -> type["OpBase"]:
+    """Register an OpBase subclass for a specific op_name."""
+    if op_name := getattr(cls, "op_name", None):
+        _ops_ui_registry[op_name] = cls
+    return cls
 
 class RenderFn(ConsoleRenderable):
     def __init__(self, render):
@@ -297,6 +306,7 @@ class UIRenderStr(ConsoleRenderable):
             yield self.render(self.op.data.template, rendered)
 
 
+@register_op_ui
 @dataclass
 class OpBuildDep(OpBase):
     op_name: str = "build/dep"
@@ -351,6 +361,7 @@ class OpBuildDep(OpBase):
             parent_node.children.remove(self.render_node)
 
 
+@register_op_ui
 @dataclass
 class OpRender(OpBase):
     op_name: str = "render/file"
@@ -362,6 +373,7 @@ class OpRender(OpBase):
         return f"📝 [grey50]{src} [grey70]⤏[/] {dst}[/]"
 
 
+@register_op_ui
 @dataclass
 class OpRenderStr(OpBase):
     op_name: str = "render/str"
@@ -371,6 +383,7 @@ class OpRenderStr(OpBase):
         return UIRenderStr(self)
 
 
+@register_op_ui
 @dataclass
 class OpRunSh(OpBase):
     op_name: str = "run/sh"
@@ -409,6 +422,7 @@ class OpRunSh(OpBase):
         self.show_logs = self.show_content
 
 
+@register_op_ui
 @dataclass
 class OpUseDep(OpBase):
     op_name: str = "use/dep"
@@ -464,6 +478,7 @@ class UIRunBrewHeader(ConsoleRenderable):
     def __rich_console__(self, *args):
         yield self.render_install_state()
 
+@register_op_ui
 @dataclass
 class OpRunBrew(OpBase):
     op_name: str = "run/brew"
@@ -472,6 +487,7 @@ class OpRunBrew(OpBase):
         return UIRunBrewHeader(self)
 
 
+@register_op_ui
 @dataclass
 class OpBuildConfigs(OpBase):
     op_name: str = "build/specs"
@@ -496,10 +512,6 @@ class OpBuildConfigs(OpBase):
         yield self.render_node
 
 
-OPS_UI = [cls for cls in globals().values() if isclass(cls) and issubclass(cls, OpBase)]
-OPS_UI_MAP = {
-    op_name: cls for cls in OPS_UI if (op_name := getattr(cls, "op_name", None))
-}
 
 
 class OpsView(ConsoleRenderable):
@@ -516,7 +528,7 @@ class OpsView(ConsoleRenderable):
         return None
 
     def build_op(self, op_name: str, op_data):
-        if cls := OPS_UI_MAP.get(op_name):
+        if cls := _ops_ui_registry.get(op_name):
             return cls(op_name=op_name, data=op_data)
         return OpBase(op_name=op_name, data=op_data)
 

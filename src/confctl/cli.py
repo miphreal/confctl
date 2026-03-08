@@ -1,7 +1,7 @@
+import argparse
 import asyncio
 import os
 import signal
-import sys
 from pathlib import Path
 
 from rich.console import Console
@@ -12,10 +12,7 @@ from confctl.deps.worker import run_worker
 from confctl.ui import OpsView
 
 
-async def tui_app():
-    specs: list[str] = sys.argv[1:]
-    configs_root = Path(os.getenv("CONFCTL_CONFIGS_ROOT", str(Path.cwd())))
-
+async def tui_app(specs: list[str], configs_root: Path):
     ui_channel_end, worker_channel_end = create_channel()
 
     ui = OpsView()
@@ -48,7 +45,27 @@ async def tui_app():
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        prog="confctl",
+        description="Configuration management tool",
+    )
+    parser.add_argument(
+        "specs",
+        nargs="*",
+        default=[],
+        help="Specs to build (e.g. tools/kitty, conf::tools/shell:zsh)",
+    )
+    parser.add_argument(
+        "--configs-root",
+        "-C",
+        type=Path,
+        default=Path(os.getenv("CONFCTL_CONFIGS_ROOT", str(Path.cwd()))),
+        help="Root directory for configurations (default: $CONFCTL_CONFIGS_ROOT or cwd)",
+    )
+
+    args = parser.parse_args()
+
     try:
-        asyncio.run(tui_app())
+        asyncio.run(tui_app(specs=args.specs, configs_root=args.configs_root))
     except KeyboardInterrupt:
         pass

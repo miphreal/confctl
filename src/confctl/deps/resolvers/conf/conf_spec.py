@@ -3,6 +3,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl
 
 from confctl.deps.ctx import Ctx
+from confctl.deps.runtime import active_services
 from confctl.deps.spec import parse_spec, Spec
 
 
@@ -57,7 +58,8 @@ def parse_conf_spec(raw_spec: str, ctx: Ctx) -> ConfSpec:
 
     conf_path_part = conf_path_part.strip()
 
-    conf_path = ctx.configs_root
+    configs_root = active_services.get().configs_root
+    conf_path = configs_root
 
     # try to build relative paths relatively the current configuration
     if conf_path_part.startswith(("./", "../")) or not conf_path_part:
@@ -68,7 +70,7 @@ def parse_conf_spec(raw_spec: str, ctx: Ctx) -> ConfSpec:
 
     # re-shape `spec` to show path to targes relatively the root config folder
     if spec.startswith(("./", "../", ":")):
-        spec = str(conf_path.relative_to(ctx.configs_root))
+        spec = str(conf_path.relative_to(configs_root))
         if target_name:
             spec = f"{spec}:{target_name}"
 

@@ -26,6 +26,9 @@ dev = [
     "mypy>=1.11.2",
     "ruff>=0.6.4",
 ]
+test = [
+    "pytest>=8.0",
+]
 
 [build-system]
 requires = ["hatchling"]

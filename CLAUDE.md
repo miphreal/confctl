@@ -31,9 +31,13 @@ mypy src/confctl/
 
 # Format
 ruff format src/
-```
 
-There are no tests currently.
+# Tests (in Docker)
+docker build -f Dockerfile.test -t confctl-test . && docker run --rm confctl-test
+
+# Tests (single test)
+docker run --rm confctl-test uv run pytest tests/test_actions.py::TestShAction::test_echo_command -v
+```
 
 ## Architecture
 

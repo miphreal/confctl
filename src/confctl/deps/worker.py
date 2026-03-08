@@ -7,6 +7,7 @@ from confctl.wire.events import OpsTracking
 
 from .registry import Registry
 from .ctx import Ctx
+from .runtime import RuntimeServices, active_services, active_ctx
 
 
 DEFAULT_RESOLVERS = [
@@ -24,10 +25,13 @@ def build_specs(specs: list[str], configs_root: Path, events_channel: Connection
 
         registry = Registry(global_ctx=global_ctx)
 
+        services = RuntimeServices(
+            ops=ops_tracking, registry=registry, configs_root=configs_root
+        )
+        active_services.set(services)
+        active_ctx.set(global_ctx)
+
         global_ctx["global_ctx"] = global_ctx
-        global_ctx["ops"] = ops_tracking
-        global_ctx["registry"] = registry
-        global_ctx["configs_root"] = configs_root
 
         op.debug("Setup resolvers")
         registry.setup_resolvers(DEFAULT_RESOLVERS)

@@ -9,6 +9,7 @@ from pathlib import Path
 from confctl.wire.events import OpWrapper
 from .ctx import Ctx
 from .dep import Dep
+from .runtime import RuntimeServices, active_services, active_ctx, active_caller
 
 
 FN_ACTION_NAME_ATTR = "__confclt_action_name__"
@@ -16,19 +17,20 @@ FN_ACTION_NAME_ATTR = "__confclt_action_name__"
 
 @dataclass
 class Action:
-    global_ctx: Ctx
+    services: RuntimeServices
+    ctx: Ctx
     caller: Dep | None
     tracking: t.Callable  # a function that creates context manager
     tracking_op: OpWrapper | None = None
 
     @property
     def execution_ctx(self):
-        return self.caller.ctx if self.caller else self.global_ctx
+        return self.caller.ctx if self.caller else self.ctx
 
     def resolve_action(self, action: str):
         if self.caller:
             return self.caller.get_action(action)
-        return self.global_ctx[action]
+        return self.ctx[action]
 
     def log(self, log: str):
         if self.tracking_op:
@@ -56,12 +58,15 @@ def action(
     def _decorator(fn: t.Callable):
         @wraps(fn)
         def _fn(*args, **kwargs):
-            ctx: Ctx = kwargs.pop("__ctx")
-            caller: Dep | None = kwargs.pop("__caller", None)
+            ctx = active_ctx.get()
+            caller = active_caller.get(None)
+            services = active_services.get()
+
             action_arg = Action(
-                global_ctx=ctx.global_ctx,
+                services=services,
+                ctx=ctx,
                 caller=caller,
-                tracking=ctx.ops.get_track_fn(action=action_name),
+                tracking=services.ops.get_track_fn(action=action_name),
             )
 
             if auto_ops_wrapper:
@@ -86,7 +91,7 @@ def action(
                 if op.error and isinstance(caller, Dep):
                     if not caller.failsafe and not failsafe:
                         raise op.error
-                    ctx.ops.debug(f"Muted {caller.spec} error: {op.error}")
+                    services.ops.debug(f"Muted {caller.spec} error: {op.error}")
 
                 return ret
             else:
@@ -109,9 +114,15 @@ def get_action_name(fn) -> str | None:
     return None
 
 def prep_action_as_fn(fn, ctx: Ctx, caller: t.Any = None):
-    return lambda *args, **kwargs: fn(
-        *args, **kwargs, __ctx=ctx, __caller=caller
-    )
+    def _fn(*args, **kwargs):
+        ctx_token = active_ctx.set(ctx)
+        caller_token = active_caller.set(caller)
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            active_ctx.reset(ctx_token)
+            active_caller.reset(caller_token)
+    return _fn
 
 #
 # Common actions
@@ -187,7 +198,7 @@ def dep(act: Action, spec: str, /):
     render_str_fn = act.resolve_action("render/str")
     spec = render_str_fn(spec)
     act.progress(spec=spec)
-    return act.global_ctx.registry.resolve(spec, act.execution_ctx)
+    return act.services.registry.resolve(spec, act.execution_ctx)
 
 
 @dataclass
@@ -228,18 +239,13 @@ def sh(act: Action, cmd: str, env: dict | None = None, log_progress: bool = True
     ) as process:
         act.progress(pid=process.pid)
 
-        while process.poll() is None:
-            if process.stdout is not None:
-                for log in process.stdout.readlines():
-                    if log_progress:
-                        act.log(log)
-                    logs.append(log)
-
         if process.stdout is not None:
-            for log in process.stdout.readlines():
+            for line in process.stdout:
                 if log_progress:
-                    act.log(log)
-                logs.append(log)
+                    act.log(line)
+                logs.append(line)
+
+        process.wait()
 
         if not log_progress:
             act.log(''.join(logs))

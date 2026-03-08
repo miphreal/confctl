@@ -53,7 +53,9 @@ class ConfDep(Dep):
         raise TypeError("`key` must be string or list of strings")
 
     def force_stop(self, reason: str, data: dict | None = None):
-        self.ctx.ops.force_stop(reason, data)
+        from confctl.deps.runtime import active_services
+
+        active_services.get().ops.force_stop(reason, data)
 
 
 class ConfResolver:
@@ -107,8 +109,10 @@ def setup(registry: Registry):
     registry.register_resolver(conf_resolver)
 
     # Handle root configuration
+    from confctl.deps.runtime import active_services
+
     global_ctx = registry.global_ctx
-    configs_root = global_ctx.configs_root
+    configs_root = active_services.get().configs_root
     root_conf = configs_root / ".confbuild.py"
     if root_conf.exists():
         root_conf = load_python_module(root_conf)
@@ -121,10 +125,7 @@ def setup(registry: Registry):
             }
         )
         # set configuration from root `root_conf`
-        conf(
-            **load_module_level_config(root_conf),
-            __ctx=global_ctx,
-        )
+        conf(**load_module_level_config(root_conf))
         # load extra resolvers
         confctl_resolvers = getattr(global_ctx, "CONFCTL_RESOLVERS", [])
         registry.setup_resolvers(confctl_resolvers)

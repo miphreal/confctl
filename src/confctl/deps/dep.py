@@ -1,7 +1,6 @@
 import typing as t
 
 from dataclasses import dataclass, field
-from functools import cache
 
 from .ctx import Ctx
 from .spec import Spec
@@ -17,6 +16,7 @@ class Dep:
     # actions that can be triggered on dependency
     actions: list[t.Callable] = field(default_factory=list)
     _actions_map: dict[str, t.Callable] = field(default_factory=dict)
+    _action_cache: dict[str, t.Callable] = field(default_factory=dict, repr=False)
 
     # do not trigger error globally
     failsafe: bool = False
@@ -48,12 +48,16 @@ class Dep:
     def __hash__(self) -> int:
         return hash(self.spec)
 
-    @cache
     def get_action(self, action_name: str):
+        if action_name in self._action_cache:
+            return self._action_cache[action_name]
+
         from .actions import prep_action_as_fn
         fn = self._actions_map.get(action_name)
         if callable(fn):
-            return prep_action_as_fn(fn, ctx=self.ctx, caller=self)
+            bound = prep_action_as_fn(fn, ctx=self.ctx, caller=self)
+            self._action_cache[action_name] = bound
+            return bound
 
         raise RuntimeError(
             f"Cannot resolve {action_name} action for {self.spec} dependency."

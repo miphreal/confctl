@@ -113,10 +113,9 @@ class OpWrapper:
 class OpsTracking:
     _ev_channel: Connection
 
-    seq_id = iter(range(10**10))
-
     def __init__(self, events_channel: Connection):
         self._ev_channel = events_channel
+        self._seq_id = iter(range(10**10))
 
     def ev(self, ev: Event):
         self._ev_channel.send(ev)
@@ -147,7 +146,7 @@ class OpsTracking:
         return partial(self.op, action)
 
     def get_op_id(self, op_name: Op, prefix: str | None = None) -> str:
-        next_id = f"{op_name}-{next(self.seq_id)}"
+        next_id = f"{op_name}-{next(self._seq_id)}"
         if prefix:
             return f"{prefix}--{next_id}"
         return next_id
