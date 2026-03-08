@@ -23,7 +23,7 @@ def pipx(act: Action):
 
     package_spec = f"{package}=={version}" if version else package
 
-    ret = run_sh(f"pipx list --json 2>/dev/null")
+    ret = run_sh("pipx list --json 2>/dev/null")
     pipx_info = json.loads(ret.output)
     assert pipx_info["pipx_spec_version"] == "0.1"
 

@@ -50,7 +50,7 @@ class ConfDep(Dep):
             return dep_action(key)
         if isinstance(key, (tuple, str)):
             return list(map(dep_action, key))
-        raise TypeError(f"`key` must be string or list of strings")
+        raise TypeError("`key` must be string or list of strings")
 
     def force_stop(self, reason: str, data: dict | None = None):
         self.ctx.ops.force_stop(reason, data)

@@ -72,6 +72,7 @@ def brew(act: Action):
         return "unchanged"
 
     # no info about the package, need to install it
+    run_sh = act.resolve_action("run/sh")
     if run_sh(f"brew install {spec.spec}"):
         act.progress(status="installed")
         return "installed"

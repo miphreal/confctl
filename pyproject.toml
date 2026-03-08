@@ -2,7 +2,7 @@
 name = "confctl"
 version = "0.4.0"
 description = "Simple configuration management"
-uthors = [
+authors = [
   {name = "Evgeny Lychkovsky", email = "miphreal@gmail.com"},
 ]
 maintainers = [
@@ -20,8 +20,8 @@ dependencies = [
 [project.scripts]
 confctl = "confctl.cli:main"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "ipdb>=0.13.13",
     "mypy>=1.11.2",
     "ruff>=0.6.4",

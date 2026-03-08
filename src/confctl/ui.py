@@ -469,7 +469,6 @@ class OpRunBrew(OpBase):
     op_name: str = "run/brew"
 
     def _build_header(self):
-        spec = self.data['action_src']
         return UIRunBrewHeader(self)
 
 
@@ -510,8 +509,8 @@ class OpsView(ConsoleRenderable):
         self.ops_map: dict[tuple[str, ...], OpBase] = {}
 
     def get_parent_node(self, op_path: tuple[str, ...]):
-        for l in range(len(op_path), 0, -1):
-            node = self.ops_map.get(tuple(op_path[:l]))
+        for i in range(len(op_path), 0, -1):
+            node = self.ops_map.get(tuple(op_path[:i]))
             if node is not None:
                 return node
         return None

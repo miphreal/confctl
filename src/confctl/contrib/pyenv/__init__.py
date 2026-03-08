@@ -1,1 +1,1 @@
-from .resolver import setup
+from .resolver import setup as setup

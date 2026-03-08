@@ -1,4 +1,3 @@
-import types
 import typing as t
 
 from confctl.deps.actions import action, Action
