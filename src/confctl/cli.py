@@ -7,6 +7,8 @@ from pathlib import Path
 from rich.console import Console
 from rich.live import Live
 
+from importlib.metadata import version
+
 from confctl.wire.channel import create_channel
 from confctl.deps.worker import run_worker
 from confctl.ui import OpsView
@@ -48,6 +50,9 @@ def main():
     parser = argparse.ArgumentParser(
         prog="confctl",
         description="Configuration management tool",
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {version('confctl')}"
     )
     parser.add_argument(
         "specs",
