@@ -5,18 +5,24 @@ import typing as t
 
 from confctl.deps.resolvers.simple import simple_resolver
 
+from .bootstrap import ensure_tool
+
 if t.TYPE_CHECKING:
     from confctl.deps.actions import Action
 
 
 def pipx(act: Action):
+    if not ensure_tool("pipx", act):
+        act.progress(status="failed")
+        return "failed"
+
     dep = act.caller
     spec = dep.spec
 
     run_sh = act.resolve_action("run/sh")
 
-    if '@' in spec.spec:
-        package, version = spec.spec.split('@')
+    if "@" in spec.spec:
+        package, version = spec.spec.split("@")
     else:
         package = spec.spec
         version = None
@@ -31,21 +37,21 @@ def pipx(act: Action):
 
     if package_info:
         installed_version = package_info["metadata"]["main_package"]["package_version"]
-        if not installed_version.startswith(version or ''):
+        if not installed_version.startswith(version or ""):
             if run_sh(f"pipx install --force {package_spec}"):
-                act.progress(status='installed')
-                return 'installed'
+                act.progress(status="installed")
+                return "installed"
 
-        act.progress(status='unchanged')
-        return 'unchanged'
+        act.progress(status="unchanged")
+        return "unchanged"
 
     # no info about the package, need to install it
     elif run_sh(f"pipx install {package_spec}"):
-        act.progress(status='installed')
-        return 'installed'
+        act.progress(status="installed")
+        return "installed"
 
-    act.progress(status='failed')
-    return 'failed'
+    act.progress(status="failed")
+    return "failed"
 
 
-setup = simple_resolver('pipx')(pipx)
+setup = simple_resolver("pipx")(pipx)

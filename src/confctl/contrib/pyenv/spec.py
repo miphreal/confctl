@@ -22,9 +22,9 @@ def parse_pyenv_spec(raw_spec: str) -> PyEnvSpec:
     common_spec = parse_spec(
         raw_spec=raw_spec, default_resolver_name="<unknown-resolver>"
     )
-    assert (
-        common_spec.resolver_name == "pyenv"
-    ), f"{common_spec} is unsupported by `PyEnvResolver`"
+    assert common_spec.resolver_name == "pyenv", (
+        f"{common_spec} is unsupported by `PyEnvResolver`"
+    )
 
     spec = common_spec.spec
 

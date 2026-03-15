@@ -5,6 +5,8 @@ import typing as t
 
 from confctl.deps.resolvers.simple import simple_resolver
 
+from .bootstrap import ensure_tool
+
 if t.TYPE_CHECKING:
     from confctl.deps.actions import Action
 
@@ -58,6 +60,10 @@ class BrewInfo:
 
 
 def brew(act: Action):
+    if not ensure_tool("brew", act):
+        act.progress(status="failed")
+        return "failed"
+
     dep = act.caller
     spec = dep.spec
 
@@ -82,4 +88,3 @@ def brew(act: Action):
 
 
 setup = simple_resolver("brew")(brew)
-

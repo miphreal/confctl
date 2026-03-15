@@ -1,5 +1,7 @@
 from confctl.deps.actions import action, Action
 
+from ..bootstrap import ensure_tool
+
 
 @action(
     "pyenv/install",
@@ -13,9 +15,14 @@ from confctl.deps.actions import action, Action
 def install(act: Action):
     from .resolver import PyEnvDep
 
-    assert isinstance(
-        act.caller, PyEnvDep
-    ), "Can be called only for `PyEnvDep` instance"
+    assert isinstance(act.caller, PyEnvDep), (
+        "Can be called only for `PyEnvDep` instance"
+    )
+
+    if not ensure_tool("pyenv", act):
+        act.caller.env_state[("pyenv", "bootstrap")] = "failed"
+        return
+
     dep = act.caller
     spec = dep.spec
 
@@ -51,9 +58,9 @@ def install(act: Action):
 def state(act: Action, *state_request):
     from .resolver import PyEnvDep
 
-    assert isinstance(
-        act.caller, PyEnvDep
-    ), "Can be called only for `PyEnvDep` instance"
+    assert isinstance(act.caller, PyEnvDep), (
+        "Can be called only for `PyEnvDep` instance"
+    )
     dep = act.caller
     spec = dep.spec
 
