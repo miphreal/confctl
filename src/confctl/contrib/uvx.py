@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import typing as t
 
 from confctl.deps.resolvers.simple import simple_resolver
@@ -35,13 +34,12 @@ def uvx(act: Action):
     package_spec = f"{package}=={version}" if version else package
 
     # Check installed tools
-    ret = run_sh("uv tool list --format json 2>/dev/null", log_progress=False)
+    ret = run_sh("uv tool list 2>/dev/null", log_progress=False)
     if ret:
-        tools_info = json.loads(ret.output)
-        for tool in tools_info:
-            if tool.get("name") == package:
-                installed_version = tool.get("version", "")
-                if not installed_version.startswith(version or ""):
+        for line in ret.output.splitlines():
+            if line.startswith(f"{package} v"):
+                installed_version = line.split(" v", 1)[1].strip()
+                if version and installed_version != version:
                     if run_sh(f"uv tool install --force {package_spec}"):
                         act.progress(status="installed")
                         return "installed"
@@ -49,8 +47,8 @@ def uvx(act: Action):
                 act.progress(status="unchanged")
                 return "unchanged"
 
-    # Not installed yet
-    if run_sh(f"uv tool install {package_spec}"):
+    # Not installed yet (use --force in case executable exists from another tool manager)
+    if run_sh(f"uv tool install --force {package_spec}"):
         act.progress(status="installed")
         return "installed"
 
