@@ -83,7 +83,7 @@ $ confctl zsh
 
 confctl follows a build-system model:
 
-1. **Specs** identify what to build: `tools/kitty`, `brew::neovim`, `pyenv::python@3.12`
+1. **Specs** identify what to build: `tools/kitty`, `brew::neovim`, `uvx::ruff`, `asdf::nodejs@18`
 2. **Resolvers** know how to handle each spec type
 3. **Dependencies** are resolved recursively before the current target builds
 4. A **worker process** executes the build graph while the **main process** renders a live TUI showing progress
@@ -267,14 +267,20 @@ CONFCTL_RESOLVERS = [
     "confctl.contrib.homebrew",
     "confctl.contrib.pipx",
     "confctl.contrib.pyenv",
+    "confctl.contrib.uvx",
+    "confctl.contrib.asdf",
 ]
 ```
 
 | Resolver | Spec format | What it does |
 |----------|-------------|--------------|
-| `brew` | `brew::package` | Installs a Homebrew formula/cask (skips if already installed) |
-| `pipx` | `pipx::package` | Installs a pipx package |
+| `brew` | `brew::package`, `brew::package@version` | Installs a Homebrew formula/cask (skips if already installed) |
+| `pipx` | `pipx::package`, `pipx::package@version` | Installs a Python tool via pipx |
 | `pyenv` | `pyenv::python@version` | Installs a Python version via pyenv |
+| `uvx` | `uvx::package`, `uvx::package@version` | Installs a Python tool via `uv tool install` |
+| `asdf` | `asdf::plugin@version`, `asdf::plugin` | Installs a tool version via asdf (defaults to latest) |
+
+All contrib resolvers auto-bootstrap their underlying tool if it's not found — installing via Homebrew first, then falling back to official install scripts.
 
 ## Project organization patterns
 
