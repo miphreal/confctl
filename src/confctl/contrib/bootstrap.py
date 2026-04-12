@@ -15,13 +15,14 @@ if t.TYPE_CHECKING:
 INSTALL_SCRIPTS: dict[str, str] = {
     "brew": '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
     "asdf": "git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.16.7",
+    "mise": "curl https://mise.jdx.dev/install.sh | sh",
     "pyenv": "curl -fsSL https://pyenv.run | bash",
     "pipx": "python3 -m pip install --user pipx",
     "uv": "curl -LsSf https://astral.sh/uv/install.sh | sh",
 }
 
 # Tools that can be installed via brew
-BREW_INSTALLABLE = {"asdf", "pyenv", "pipx", "uv"}
+BREW_INSTALLABLE = {"asdf", "mise", "pyenv", "pipx", "uv"}
 
 
 def ensure_tool(tool: str, act: Action) -> bool:

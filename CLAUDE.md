@@ -51,7 +51,7 @@ docker run --rm confctl-test uv run pytest tests/test_actions.py::TestShAction::
 
 **Spec System** — Dependencies use `resolver::spec` format (e.g. `conf::tools/kitty:main`, `brew::neovim`, `pyenv::python@3.10.4`).
 
-**Resolver Pattern** — Each resolver implements `can_resolve(raw_spec, ctx)` and `resolve(raw_spec, ctx)`. Built-in resolvers: `conf`, `path`, `dir`, `brew`, `pipx`, `pyenv`. Registry in `deps/registry.py`.
+**Resolver Pattern** — Each resolver implements `can_resolve(raw_spec, ctx)` and `resolve(raw_spec, ctx)`. Built-in resolvers: `conf`, `path`, `dir`, `brew`, `pipx`, `pyenv`, `uvx`, `asdf`, `mise`. Registry in `deps/registry.py`.
 
 **Action System** — Decorated functions (`@action`) that perform build steps: `render/file`, `run/sh`, `use/dep`, `show/msg`, etc. Defined in `deps/actions.py` and resolver-specific action files.
 

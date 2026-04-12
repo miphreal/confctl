@@ -269,6 +269,7 @@ CONFCTL_RESOLVERS = [
     "confctl.contrib.pyenv",
     "confctl.contrib.uvx",
     "confctl.contrib.asdf",
+    "confctl.contrib.mise",
 ]
 ```
 
@@ -279,6 +280,7 @@ CONFCTL_RESOLVERS = [
 | `pyenv` | `pyenv::python@version` | Installs a Python version via pyenv |
 | `uvx` | `uvx::package`, `uvx::package@version` | Installs a Python tool via `uv tool install` |
 | `asdf` | `asdf::plugin@version`, `asdf::plugin` | Installs a tool version via asdf (defaults to latest) |
+| `mise` | `mise::tool@version`, `mise::tool` | Installs a tool version via mise (defaults to latest) |
 
 All contrib resolvers auto-bootstrap their underlying tool if it's not found — installing via Homebrew first, then falling back to official install scripts.
 
