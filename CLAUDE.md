@@ -71,3 +71,31 @@ docker run --rm confctl-test uv run pytest tests/test_actions.py::TestShAction::
 
 - `dev` — development branch (feature branches based here)
 - `main` — release branch
+
+## Publishing a release
+
+Released to [PyPI](https://pypi.org/project/confctl/) via `uv`. Build
+artifacts land in `dist/` (gitignored).
+
+```bash
+# 1. Bump version in pyproject.toml (follow semver)
+# 2. Add a new section to CHANGELOG.md describing the release
+# 3. Commit and tag
+git commit -am "Bump version to X.Y.Z"
+git tag vX.Y.Z
+
+# 4. Clean previous artifacts, build, publish
+rm -rf dist/
+uv build
+uv publish    # uses UV_PUBLISH_TOKEN or ~/.pypirc; pass --token if needed
+
+# 5. Push commit + tag
+git push origin main
+git push origin vX.Y.Z
+```
+
+Smoke-test the published wheel before moving on:
+
+```bash
+uvx --refresh confctl==X.Y.Z --version
+```
