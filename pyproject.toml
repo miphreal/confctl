@@ -17,6 +17,11 @@ dependencies = [
     "rich>=13.8.0",
 ]
 
+[project.optional-dependencies]
+mcp = [
+    "mcp>=1.2.0",
+]
+
 [project.scripts]
 confctl = "confctl.cli:main"
 

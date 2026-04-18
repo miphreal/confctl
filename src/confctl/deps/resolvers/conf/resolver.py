@@ -79,6 +79,39 @@ class ConfResolver:
 
         return False
 
+    def list_specs(self) -> list[str]:
+        """Return known spec paths relative to configs_root for suggestions."""
+        from confctl.deps.runtime import active_services
+
+        try:
+            configs_root = active_services.get().configs_root
+        except LookupError:
+            return []
+
+        specs: set[str] = set()
+
+        def _is_hidden(parts: tuple[str, ...]) -> bool:
+            return any(p.startswith(".") or p == "__pycache__" for p in parts)
+
+        for confbuild in configs_root.rglob(".confbuild.py"):
+            rel = confbuild.parent.relative_to(configs_root)
+            if str(rel) == ".":
+                continue
+            if _is_hidden(rel.parts):
+                continue
+            specs.add(str(rel))
+
+        for py_file in configs_root.rglob("*.py"):
+            if py_file.name == ".confbuild.py":
+                continue
+            rel = py_file.relative_to(configs_root)
+            # Skip hidden parent dirs; the file itself won't be hidden here.
+            if _is_hidden(rel.parts[:-1]):
+                continue
+            specs.add(str(rel.with_suffix("")))
+
+        return sorted(specs)
+
     def resolve(self, raw_spec: str, ctx: Ctx) -> ConfDep:
         spec = parse_conf_spec(raw_spec, ctx)
 

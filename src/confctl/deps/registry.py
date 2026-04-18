@@ -3,6 +3,7 @@ from __future__ import annotations
 import typing as t
 
 from dataclasses import dataclass, field
+from difflib import get_close_matches
 
 from confctl.utils.py_module import load_python_obj
 from .ctx import Ctx
@@ -16,6 +17,28 @@ class Resolver(t.Protocol):
         ...
 
 
+class SpecNotFoundError(RuntimeError):
+    """Raised when no resolver can handle a given spec.
+
+    Carries the `user_facing` marker so the event pipeline knows to show a
+    clean message instead of a full traceback.
+    """
+
+    user_facing = True
+
+    def __init__(self, raw_spec: str, suggestions: t.Sequence[str] = ()):
+        self.raw_spec = raw_spec
+        self.suggestions = list(suggestions)
+        super().__init__(self._format())
+
+    def _format(self) -> str:
+        msg = f"Cannot find a handler for '{self.raw_spec}' spec."
+        if self.suggestions:
+            options = "\n".join(f"  {s}" for s in self.suggestions)
+            msg = f"{msg}\nDid you mean:\n{options}"
+        return msg
+
+
 @dataclass
 class Registry:
     global_ctx: Ctx
@@ -27,7 +50,21 @@ class Registry:
             if resolver.can_resolve(raw_spec=raw_spec, ctx=ctx):
                 return resolver.resolve(raw_spec=raw_spec, ctx=ctx)
 
-        raise RuntimeError(f"Cannot find a handler for '{raw_spec}' spec.")
+        raise SpecNotFoundError(raw_spec, self._suggest(raw_spec))
+
+    def _suggest(self, raw_spec: str, n: int = 3) -> list[str]:
+        known: list[str] = []
+        for resolver in self.resolvers:
+            list_specs = getattr(resolver, "list_specs", None)
+            if callable(list_specs):
+                try:
+                    known.extend(list_specs())
+                except Exception:
+                    continue
+        # Dedupe while preserving order
+        seen: set[str] = set()
+        unique = [s for s in known if not (s in seen or seen.add(s))]
+        return get_close_matches(raw_spec, unique, n=n, cutoff=0.4)
 
     def register_resolver(self, resolver: Resolver):
         self.resolvers.append(resolver)

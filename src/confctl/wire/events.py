@@ -135,8 +135,11 @@ class OpsTracking:
         except ForceStop as e:
             self.ev(EvOpStop(op=op_name, op_path=op_path, reason=e.reason, data=e.data))
         except Exception as e:
-            tb = traceback.format_exc()
-            self.ev(EvOpError(op=op_name, op_path=op_path, error=repr(e), tb=tb))
+            if getattr(e, "user_facing", False):
+                self.ev(EvOpError(op=op_name, op_path=op_path, error=str(e), tb=""))
+            else:
+                tb = traceback.format_exc()
+                self.ev(EvOpError(op=op_name, op_path=op_path, error=repr(e), tb=tb))
             op_wrapper.error = e
         finally:
             self.ev(EvOpFinish(op=op_name, op_path=op_path))

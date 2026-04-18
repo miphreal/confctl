@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import os
 import signal
+import sys
 from pathlib import Path
 
 from rich.console import Console
@@ -12,6 +13,10 @@ from importlib.metadata import version
 from confctl.wire.channel import create_channel
 from confctl.deps.worker import run_worker
 from confctl.ui import OpsView
+
+
+def _default_configs_root() -> Path:
+    return Path(os.getenv("CONFCTL_CONFIGS_ROOT", str(Path.cwd())))
 
 
 async def tui_app(specs: list[str], configs_root: Path):
@@ -46,10 +51,39 @@ async def tui_app(specs: list[str], configs_root: Path):
         Console().print(ui)
 
 
+def _run_mcp_cli(argv: list[str]) -> None:
+    parser = argparse.ArgumentParser(
+        prog="confctl mcp",
+        description="Run a confctl MCP server over stdio",
+    )
+    parser.add_argument(
+        "--configs-root",
+        "-C",
+        type=Path,
+        default=_default_configs_root(),
+        help="Root directory for configurations (default: $CONFCTL_CONFIGS_ROOT or cwd)",
+    )
+    args = parser.parse_args(argv)
+
+    from confctl.mcp import run_mcp_server
+
+    run_mcp_server(configs_root=args.configs_root)
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "mcp":
+        _run_mcp_cli(sys.argv[2:])
+        return
+
     parser = argparse.ArgumentParser(
         prog="confctl",
         description="Configuration management tool",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "subcommands:\n"
+            "  mcp                   run a confctl MCP server over stdio\n"
+            "                        (see `confctl mcp --help`)\n"
+        ),
     )
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {version('confctl')}"
@@ -64,7 +98,7 @@ def main():
         "--configs-root",
         "-C",
         type=Path,
-        default=Path(os.getenv("CONFCTL_CONFIGS_ROOT", str(Path.cwd()))),
+        default=_default_configs_root(),
         help="Root directory for configurations (default: $CONFCTL_CONFIGS_ROOT or cwd)",
     )
 

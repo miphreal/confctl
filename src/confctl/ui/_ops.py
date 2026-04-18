@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from rich import tree
+from rich.panel import Panel
 
 from confctl.ui._base import OpBase, register_op_ui
 from confctl.ui._rendering import render_path
@@ -152,17 +153,53 @@ class OpRunBrew(OpBase):
 class OpBuildConfigs(OpBase):
     op_name: str = "build/specs"
     HIDDEN_OPS = ("use/conf",)
+    _error_panel_added: bool = False
+
+    def _header_label(self):
+        if self.error:
+            return "💢 [b red]Build failed"
+        return "🚀 [b green]Building configurations..."
+
+    def _render_error_panel(self) -> Panel:
+        lines = (self.error or "").splitlines() or [""]
+        styled: list[str] = [f"[red]{lines[0]}[/]"]
+        for line in lines[1:]:
+            stripped = line.lstrip()
+            indent = line[: len(line) - len(stripped)]
+            if stripped and stripped == line:
+                styled.append(f"[grey70]{line}[/]")
+            else:
+                styled.append(f"{indent}[cyan]{stripped}[/]")
+        return Panel(
+            "\n".join(styled),
+            title="[b red]✗ Error[/]",
+            title_align="left",
+            border_style="red",
+            padding=(0, 1),
+        )
 
     def build_ui(self):
         if self.render_node is None:
             self.render_node = tree.Tree(
-                "🚀 [b green]Building configurations...",
+                self._header_label(),
                 highlight=False,
                 guide_style="grey70",
             )
+        else:
+            self.render_node.label = self._header_label()
+
         self._build_content()
 
+        if (
+            self.error
+            and not self.error_tb
+            and not self._error_panel_added
+            and self.render_node is not None
+        ):
+            self.render_node.add(self._render_error_panel())
+            self._error_panel_added = True
+
     def __rich_console__(self, *args):
-        self.show_logs = bool(self.error)
+        self.show_logs = bool(self.error_tb)
         self.build_ui()
         yield self.render_node

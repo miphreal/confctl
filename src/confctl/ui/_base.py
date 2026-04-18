@@ -36,6 +36,7 @@ class OpBase(ConsoleRenderable):
     render_node: tree.Tree | None = None
     render_logs: tree.Tree | None = None
     error: str | None = None
+    error_tb: str | None = None
     stop_reason: tuple[str, dict | None] | None = None
     logs: list[str] = field(default_factory=list)
     show_content: bool = True
@@ -160,7 +161,8 @@ class OpBase(ConsoleRenderable):
     def handle_error(self, error, tb):
         """Tracks an exception/error caught during op execution."""
         self.error = error
-        if (tb):
+        self.error_tb = tb or None
+        if tb:
             self.logs.append(tb)
 
     def handle_finish(self, op_time: float):

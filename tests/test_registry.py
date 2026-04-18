@@ -4,7 +4,7 @@ import pytest
 from multiprocessing import Pipe
 
 from confctl.deps.ctx import Ctx
-from confctl.deps.registry import Registry
+from confctl.deps.registry import Registry, SpecNotFoundError
 from confctl.deps.runtime import RuntimeServices, active_services, active_ctx
 from confctl.wire.events import OpsTracking
 
@@ -42,6 +42,37 @@ class TestRegistry:
 
         with pytest.raises(RuntimeError, match="Cannot find a handler"):
             reg.resolve("unknown::spec")
+
+    def test_spec_not_found_is_user_facing(self):
+        ctx = Ctx()
+        reg = Registry(global_ctx=ctx)
+
+        with pytest.raises(SpecNotFoundError) as exc_info:
+            reg.resolve("tools/unknown")
+
+        err = exc_info.value
+        assert err.user_facing is True
+        assert err.raw_spec == "tools/unknown"
+        assert err.suggestions == []
+        assert "Cannot find a handler for 'tools/unknown' spec." in str(err)
+
+    def test_spec_not_found_suggests_close_matches(self):
+        ctx = Ctx()
+        reg = Registry(global_ctx=ctx)
+
+        class ListingResolver(StubResolver):
+            def list_specs(self):
+                return ["tools/zsh", "tools/kitty", "macos/terminal"]
+
+        reg.register_resolver(ListingResolver("test"))
+
+        with pytest.raises(SpecNotFoundError) as exc_info:
+            reg.resolve("macos/zsh")
+
+        err = exc_info.value
+        assert err.suggestions, "expected at least one suggestion"
+        assert "Did you mean:" in str(err)
+        assert any(s in err.suggestions for s in ["tools/zsh", "macos/terminal"])
 
     def test_resolvers_checked_in_order(self):
         ctx = Ctx()

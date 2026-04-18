@@ -377,6 +377,52 @@ export CONFCTL_CONFIGS_ROOT=~/my-configs
 confctl tools/kitty
 ```
 
+## MCP server
+
+confctl ships with an optional MCP (Model Context Protocol) server so LLM clients (Claude Code, Claude Desktop, etc.) can discover and run your configs directly.
+
+Install with the `mcp` extra:
+
+```sh
+uv tool install 'confctl[mcp]'
+# or: pipx install 'confctl[mcp]'
+```
+
+Run over stdio:
+
+```sh
+confctl mcp -C ~/my-configs
+# or
+CONFCTL_CONFIGS_ROOT=~/my-configs confctl mcp
+```
+
+Exposed tools:
+
+| Tool | Arguments | Description |
+|------|-----------|-------------|
+| `list_specs` | `configs_root?` | Scans the configs root for `.confbuild.py` files and returns discovered specs. |
+| `run_specs` | `specs: list[str]`, `configs_root?` | Runs the given specs in a worker process and returns a human-readable summary of the op tree. Empty list runs the root config's `main` target. |
+| `run_specs_json` | same as `run_specs` | Same as `run_specs` but returns raw JSON (ops, logs, errors). |
+
+Register with Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "confctl": {
+      "command": "confctl",
+      "args": ["mcp", "-C", "/Users/you/my-configs"]
+    }
+  }
+}
+```
+
+Or with Claude Code:
+
+```sh
+claude mcp add confctl -- confctl mcp -C ~/my-configs
+```
+
 ## Development
 
 Requires Python >= 3.12 and [uv](https://github.com/astral-sh/uv).
