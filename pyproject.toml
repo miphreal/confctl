@@ -1,6 +1,6 @@
 [project]
 name = "confctl"
-version = "0.6.1"
+version = "0.7.0"
 description = "Simple configuration management"
 authors = [
   {name = "Evgeny Lychkovsky", email = "miphreal@gmail.com"},
