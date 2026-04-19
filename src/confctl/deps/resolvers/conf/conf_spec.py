@@ -58,7 +58,7 @@ def parse_conf_spec(raw_spec: str, ctx: Ctx) -> ConfSpec:
 
     conf_path_part = conf_path_part.strip()
 
-    configs_root = active_services.get().configs_root
+    configs_root = active_services.get().configs_root.resolve()
     conf_path = configs_root
 
     # try to build relative paths relatively the current configuration
@@ -67,6 +67,13 @@ def parse_conf_spec(raw_spec: str, ctx: Ctx) -> ConfSpec:
 
     if conf_path_part:
         conf_path = (conf_path / conf_path_part).resolve()
+
+    # Containment: the resolved config path must stay inside configs_root.
+    # Blocks absolute-path specs and `..` escapes that would load arbitrary
+    # .confbuild.py / *.py files from outside the managed tree.
+    assert conf_path.is_relative_to(configs_root), (
+        f"{raw_spec!r} escapes configs_root ({configs_root})"
+    )
 
     # re-shape `spec` to show path to targes relatively the root config folder
     if spec.startswith(("./", "../", ":")):

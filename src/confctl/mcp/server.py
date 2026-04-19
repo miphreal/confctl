@@ -61,9 +61,17 @@ def run_mcp_server(configs_root: Path) -> None:
     mcp = FastMCP("confctl")
 
     def _resolve_root(configs_root_arg: str | None) -> Path:
-        if configs_root_arg:
-            return Path(configs_root_arg).expanduser().resolve()
-        return default_root
+        """Resolve an optional caller-supplied root, keeping it inside the
+        server's start-time root. The LLM can point at subdirectories of the
+        configured root but cannot escape it."""
+        if not configs_root_arg:
+            return default_root
+        root = Path(configs_root_arg).expanduser().resolve()
+        if root != default_root and not root.is_relative_to(default_root):
+            raise ValueError(
+                f"configs_root must be inside {default_root}; got {root}"
+            )
+        return root
 
     @mcp.tool()
     async def run_specs(

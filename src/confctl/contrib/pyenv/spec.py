@@ -1,6 +1,11 @@
+import re
 from dataclasses import dataclass
 
 from confctl.deps.spec import parse_spec, Spec
+
+# Same safe-token allowlist used by SimpleResolver — pyenv commands also run
+# via `shell=True`, so spec.spec must not contain shell metacharacters.
+_SAFE_SPEC_RE = re.compile(r"^[A-Za-z0-9._@/+\-]+$")
 
 
 @dataclass
@@ -27,6 +32,12 @@ def parse_pyenv_spec(raw_spec: str) -> PyEnvSpec:
     )
 
     spec = common_spec.spec
+
+    if not _SAFE_SPEC_RE.match(spec):
+        raise RuntimeError(
+            f"pyenv::{spec!r} contains characters that are unsafe to pass to "
+            "a shell. Allowed: letters, digits, and . _ @ / + -"
+        )
 
     match spec.split("/"):
         case ["python", version]:

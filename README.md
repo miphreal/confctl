@@ -423,6 +423,26 @@ Or with Claude Code:
 claude mcp add confctl -- confctl mcp -C ~/my-configs
 ```
 
+## Security notes
+
+confctl is a configuration tool, not a sandbox — running it against a
+config means running the Python inside it. Keep the following in mind:
+
+- **Only run against configs you trust.** Every `.confbuild.py` is imported
+  and executed; top-level code runs at import time, `main(conf)` runs after.
+- **`confctl mcp` exposes this to an LLM client.** The server only imports
+  `.confbuild.py` files under the root you pass via `-C`. A compromised or
+  prompt-injected client cannot escape that root, but anything *inside* it
+  is executable code — don't point the server at a directory you haven't
+  audited.
+- **`CONFCTL_SUDO_PASS` is inherited by every shell command** confctl
+  spawns. Prefer running `sudo -v` interactively first and letting the
+  cached credential carry the session; use the env var only for
+  short-lived, non-interactive runs.
+- **Auto-bootstrap uses the upstream `curl | sh` installers** for `brew`,
+  `asdf`, `mise`, `pyenv`, and `uv`. There is no checksum pinning — this
+  is the vendor-recommended path and you opt in per resolver.
+
 ## Development
 
 Requires Python >= 3.12 and [uv](https://github.com/astral-sh/uv).
